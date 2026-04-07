@@ -1,0 +1,68 @@
+name: Rails Upgrade CI
+# Template: Copy to your app's .github/workflows/ and adjust ruby-version/services.
+# Runs on upgrade branches to catch regressions and deprecation warnings.
+
+on:
+  push:
+    branches: ['rails-upgrade-*', 'upgrade/*']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    strategy:
+      matrix:
+        ruby-version: ['3.2', '3.3']
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+      - name: Set up database
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+        run: bundle exec rails db:create db:schema:load
+      - name: Zeitwerk check
+        run: bundle exec rails zeitwerk:check
+      - name: Count deprecation warnings
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+        run: |
+          COUNT=$(bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" || true)
+          echo "Deprecation warnings: $COUNT"
+          if [ "${COUNT:-0}" -gt "0" ]; then
+            bundle exec rspec --no-color 2>&1 | grep "DEPRECATION" | sort | uniq -c | sort -rn
+          fi
+      - name: Run tests
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+        run: bundle exec rspec --format progress
+
+  migration-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for risky migration patterns
+        run: |
+          echo "=== Risky Migration Pattern Counts ==="
+          echo "execute(): $(grep -rn '^ *execute ' db/migrate/ --include='*.rb' 2>/dev/null | wc -l)"
+          echo "drop_table: $(grep -rn 'drop_table' db/migrate/ --include='*.rb' 2>/dev/null | wc -l)"
+          echo "remove_column: $(grep -rn 'remove_column' db/migrate/ --include='*.rb' 2>/dev/null | wc -l)"
+          echo "add_index (non-concurrent): $(grep -rn 'add_index' db/migrate/ --include='*.rb' 2>/dev/null | grep -v concurrently | wc -l)"

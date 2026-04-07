@@ -1,0 +1,12 @@
+{
+  "name": "claude-rails-upgrade",
+  "version": "0.1.0",
+  "description": "Comprehensive, version-agnostic Rails upgrade toolkit: audit deprecations, check gem compatibility, validate migrations, plan upgrades, and track progress.",
+  "author": {
+    "name": "Dhruva Sagar",
+    "url": "https://github.com/dhruvasagar/claude-rails-upgrade"
+  },
+  "repository": "https://github.com/dhruvasagar/claude-rails-upgrade",
+  "license": "MIT",
+  "keywords": ["rails", "upgrade", "migration", "deprecation", "ruby"]
+}
