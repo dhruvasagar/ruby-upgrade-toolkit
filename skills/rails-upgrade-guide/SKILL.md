@@ -1,6 +1,8 @@
 ---
 name: Rails Upgrade Guide
 description: Consult this skill when a user is upgrading Rails, asks about breaking changes between Rails versions, needs a checklist for any version bump (5→6, 6→7, 7→8, or patch releases), or wants to understand what changed and why.
+argument-hint: "(reference skill — load for version-specific breaking changes knowledge)"
+allowed-tools: Read
 version: 0.1.0
 ---
 

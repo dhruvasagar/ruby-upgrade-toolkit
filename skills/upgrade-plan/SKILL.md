@@ -37,7 +37,7 @@ If upgrading more than one minor version (e.g. 6.0 → 8.0), create an intermedi
 - 6.0 → 6.1 → 7.0 → 7.1 → 8.0
 - Each step must have a green test suite before the next begins
 
-Load the relevant version guide from the `rails-upgrade-guide` skill references.
+Load the relevant version guide from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/`.
 
 ## Step 3: Scan for Known Problem Areas
 

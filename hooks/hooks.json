@@ -1,5 +1,4 @@
 {
-  "description": "Rails upgrade safety hooks: block vendor/ writes, log migration changes, and optionally auto-fix style with rubocop.",
   "hooks": {
     "PreToolUse": [
       {
@@ -21,7 +20,12 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/log-migration.sh\"",
             "timeout": 5
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/rubocop-fix.sh\"",
