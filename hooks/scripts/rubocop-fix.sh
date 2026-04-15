@@ -47,7 +47,7 @@ result=$(cd "$project_dir" && bundle exec rubocop --autocorrect \
 
 # Only report if corrections were made
 if echo "$result" | grep -q "corrected"; then
-  corrected=$(echo "$result" | grep -oP '\d+ offenses? corrected' | head -1)
+  corrected=$(echo "$result" | grep -oE '[0-9]+ offenses? corrected' | head -1)
   echo "Rubocop: $corrected in $(basename "$file_path")"
 fi
 

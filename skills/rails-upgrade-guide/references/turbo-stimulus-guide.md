@@ -103,7 +103,7 @@ document.addEventListener("turbo:load", () => { ... })
 | `turbolinks:render` | `turbo:render` |
 | `turbolinks:visit` | `turbo:visit` |
 | `turbolinks:request-start` | `turbo:before-fetch-request` |
-| `turbolinks:request-end` | `turbo:before-fetch-response` (fires before processing; no exact 1:1 equivalent) |
+| `turbolinks:request-end` | `turbo:before-fetch-response` (fires before processing; no exact 1:1 equivalent — use `turbo:submit-end` for form responses or inspect `event.detail.fetchResponse` in `turbo:before-fetch-response`) |
 
 ## Step 6: Update Data Attributes
 
