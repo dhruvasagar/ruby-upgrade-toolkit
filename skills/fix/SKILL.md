@@ -46,30 +46,65 @@ If the active Ruby is not the target version, stop and tell the user:
 ## Step 3: Fix Gem Incompatibilities
 
 ```bash
-bundle install 2>&1 | tail -20
+bundle install 2>&1
 ```
 
-If `bundle install` fails, identify each incompatible gem and update it:
+Parse the output using these error patterns:
 
+**Error: "requires Ruby version"**
+```
+Gem X requires Ruby >= A.B.C, current is X.Y.Z
+```
+Action: The gem has a minimum Ruby version constraint that is too high for the current Ruby OR too low for the target. Run: `bundle update <gem_name>`. If the latest version still requires a higher Ruby than available, the gem must be replaced (see compatibility matrix).
+
+**Error: "Could not find compatible versions"**
+```
+Could not find compatible versions for gem '<name>':
+  In snapshot (Gemfile.lock): <name> = X.Y.Z was resolved to X.Y.Z, which depends on ...
+```
+Action: This is a cascading constraint conflict. Run:
 ```bash
-# Update a single gem conservatively
+bundle update <name_of_conflicting_gem> 2>&1 | tail -15
+```
+If the conflict involves Rails itself, ensure the Gemfile `rails` pin was updated in Step 2 first.
+
+**Error: "an error occurred while installing X"** (native extension)
+```
+An error occurred while installing nokogiri (1.x.y), and Bundler cannot continue.
+```
+Action: The gem's native extension needs to be recompiled for the new Ruby. Run:
+```bash
+bundle exec gem pristine <gem_name>
+# or reinstall the gem:
+gem install <gem_name>
+```
+
+**Error: "rake aborted" or build failure during install**
+```
+rake aborted!
+LoadError: cannot load such file -- <stdlib_lib>
+```
+Action: A gem's Rakefile requires a stdlib gem that is now separate in Ruby 3.4. Add the gem to Gemfile first, then retry bundle install.
+
+**General approach — update one gem at a time:**
+```bash
+# Conservative single-gem update
 bundle update <gem_name> 2>&1 | tail -10
 
-# After each update, re-run bundle install to check for cascading issues
+# Verify no new conflicts introduced
 bundle install 2>&1 | tail -5
 ```
 
 For Ruby 3.4+, add any missing stdlib gems to Gemfile that were found during audit:
 ```ruby
-# Add to Gemfile under a comment:
 # Ruby 3.4 stdlib removals — now separate gems
-gem "base64"      # if used
-gem "csv"         # if used
-gem "bigdecimal"  # if used
-gem "ostruct"     # if used
+gem "base64"      # if used via require 'base64'
+gem "csv"         # if used via require 'csv'
+gem "bigdecimal"  # if used via require 'bigdecimal'
+gem "ostruct"     # if used via require 'ostruct'
 ```
 
-Do not bulk-update all gems. Update one gem at a time until `bundle install` is clean.
+Do not bulk-update all gems. Update one gem at a time until `bundle install` exits 0.
 
 ## Step 4: Apply Ruby Version-Specific Code Fixes
 
