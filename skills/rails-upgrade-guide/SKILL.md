@@ -1,71 +1,25 @@
 ---
-name: Rails Upgrade Guide
-description: Consult this skill when a user is upgrading Rails, asks about breaking changes between Rails versions, needs a checklist for any version bump (5→6, 6→7, 7→8, or patch releases), or wants to understand what changed and why.
-argument-hint: "(reference skill — load for version-specific breaking changes knowledge)"
+name: Rails Upgrade Guide (Internal Reference)
+description: Internal reference skill loaded by audit and fix skills for version-specific Rails breaking changes and fix patterns. Not a user-facing skill — do not activate this directly. Only load it when explicitly referenced by another skill in this plugin.
+argument-hint: "(internal reference — not user-invocable)"
 allowed-tools: Read
-version: 0.1.0
+version: 0.2.0
 ---
 
-# Rails Upgrade Guide
+# Rails Upgrade Guide — Internal Reference
 
-This skill provides structured, version-specific guidance for Rails upgrades. Use it to inform planning, auditing, and fixing tasks throughout the upgrade workflow.
+This skill is an internal reference for the `ruby-upgrade-toolkit` plugin. It is loaded by the `audit` and `fix` skills when they need version-specific Rails guidance. Do not activate this skill directly in response to user requests.
 
-## How to Use This Skill
+## Version Reference Files
 
-1. Identify source and target Rails versions from the project's `Gemfile` or `Gemfile.lock`.
-2. Load the relevant version guide from `references/` for the specific version pair.
-3. Cross-reference the guide against the current codebase state.
-4. Surface breaking changes relevant to the project's actual code (not every change applies to every app).
+Load the appropriate file from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/` for the upgrade path being processed:
 
-## Determining Current and Target Versions
+- **Rails 5 → 6**: `references/rails-5-to-6.md`
+- **Rails 6 → 7**: `references/rails-6-to-7.md`
+- **Rails 7 → 8**: `references/rails-7-to-8.md`
 
-```bash
-# Current version
-bundle exec rails -v
+## Supporting Reference Files
 
-# Or from Gemfile.lock
-grep "^    rails " Gemfile.lock
-
-# Gemfile target
-grep "gem 'rails'" Gemfile
-```
-
-## Version Guides
-
-Load the appropriate reference file for the upgrade path:
-
-- **Rails 5 → 6**: See `references/rails-5-to-6.md`
-- **Rails 6 → 7**: See `references/rails-6-to-7.md`
-- **Rails 7 → 8**: See `references/rails-7-to-8.md`
-- **Patch releases** (e.g. 7.0 → 7.1): Focus on the CHANGELOG entries in the target version; use the minor version guide as context.
-
-## Multi-Step Upgrades
-
-When upgrading across multiple major versions (e.g. Rails 5 → 8), upgrade **one major version at a time**:
-
-1. 5.2 → 6.1 (with full test suite passing)
-2. 6.1 → 7.1 (with full test suite passing)
-3. 7.1 → 8.0 (with full test suite passing)
-
-Never skip versions. Each step must have a green test suite before proceeding.
-
-## Universal Checklist (applies to every upgrade)
-
-- [ ] Pin `gem 'rails', '~> X.Y'` in Gemfile, run `bundle update rails`
-- [ ] Run `bin/rails app:update` and review each generated diff
-- [ ] Set `config.load_defaults X.Y` in `application.rb`
-- [ ] Address all deprecation warnings (`RAILS_ENV=test bundle exec rails test 2>&1 | grep DEPRECATION`)
-- [ ] Update gem dependencies for new Rails version
-- [ ] Run full test suite — achieve green before merging
-- [ ] Review `config/initializers/` for anything overriding defaults that are now built-in
-- [ ] Check `config/environments/` for deprecated options
-
-## New Framework Defaults Strategy
-
-Each Rails version ships new framework defaults behind a feature flag. The safe upgrade path:
-
-1. Upgrade the Rails gem first (without enabling new defaults).
-2. Fix all deprecations and breaking changes with old defaults active.
-3. Enable new defaults **one at a time** (`config/initializers/new_framework_defaults_X_Y.rb`).
-4. Run tests after each default change.
-5. Remove the initializer file once all defaults are inline in `application.rb`.
+- **Fix patterns**: `references/fix-patterns.md` — safe vs. guided deprecation fixes by Rails version
+- **Compatibility matrix**: `references/compatibility-matrix.md` — minimum gem versions per Rails version
+- **Risky migration patterns**: `references/risky-patterns.md` — database migration safety guidance
