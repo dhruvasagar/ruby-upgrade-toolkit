@@ -143,6 +143,9 @@ echo "HABTM: $(grep -rn 'has_and_belongs_to_many' app/ --include='*.rb' 2>/dev/n
 echo "old enum syntax: $(grep -rEn '^ *enum [a-z_]+:' app/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "open redirect risk: $(grep -rn 'redirect_to.*params\[' app/controllers/ --include='*.rb' 2>/dev/null | wc -l) (requires security review — not auto-fixed)"
 echo "render text:: $(grep -rn 'render text:' app/ --include='*.rb' 2>/dev/null | wc -l)"
+echo "turbolinks gem: $(grep -n 'turbolinks' Gemfile 2>/dev/null | grep -v '^\s*#' | wc -l) (migrate to turbo-rails for Rails 7+)"
+echo "turbolinks JS refs: $(grep -rn 'turbolinks' app/javascript/ app/assets/ --include='*.js' --include='*.coffee' 2>/dev/null | wc -l)"
+echo "data-turbolinks attrs: $(grep -rn 'data-turbolinks' app/views/ --include='*.erb' --include='*.html' 2>/dev/null | wc -l)"
 ```
 
 ### Zeitwerk check (Rails 6+)

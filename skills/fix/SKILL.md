@@ -302,6 +302,21 @@ Found open redirect candidate:
 
 Apply the chosen fix. Do not auto-apply open redirect fixes without this confirmation.
 
+### 5f. Migrate Turbolinks → Turbo (Rails 7+ only)
+
+Skip if not upgrading to Rails 7 or later.
+
+```bash
+grep -n "turbolinks" Gemfile 2>/dev/null | grep -v "^\s*#"
+```
+
+If found, follow `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/turbo-stimulus-guide.md` for the complete migration procedure. Key steps:
+1. Add `gem "turbo-rails"` to Gemfile, `bundle install`, run `bin/rails turbo:install`
+2. Remove `gem "turbolinks"` from Gemfile, `bundle install`
+3. Update JavaScript event listeners (`turbolinks:load` → `turbo:load`)
+4. Update data attributes (`data-turbolinks` → `data-turbo`)
+5. Run RSpec to catch any view/JS integration regressions
+
 ### 5e. Update RuboCop target version
 
 In `.rubocop.yml`, ensure `AllCops.TargetRubyVersion` matches the target Ruby minor version:

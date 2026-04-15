@@ -23,3 +23,4 @@ Load the appropriate file from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/r
 - **Fix patterns**: `references/fix-patterns.md` — safe vs. guided deprecation fixes by Rails version
 - **Compatibility matrix**: `references/compatibility-matrix.md` — minimum gem versions per Rails version
 - **Risky migration patterns**: `references/risky-patterns.md` — database migration safety guidance
+- **Turbo/Stimulus migration**: `references/turbo-stimulus-guide.md` — Turbolinks → Turbo migration for Rails 7+
