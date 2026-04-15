@@ -53,9 +53,9 @@ grep -rn "def .*\*\*[a-z_]*" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
 grep -rn "def .*[a-z_]* = {}" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
 
 # Call sites with potential hash/keyword mismatch
-grep -rn "\*\*options\|\*\*opts\|\*\*params\|\*\*kwargs" app/ --include="*.rb" 2>/dev/null | wc -l
+grep -rEn "\*\*options|\*\*opts|\*\*params|\*\*kwargs" app/ --include="*.rb" 2>/dev/null | wc -l
 
-# Ruby 2.7 deprecation warnings preview
+# Ruby 2.7 deprecation warnings preview (only run if upgrading FROM Ruby 2.7)
 RUBYOPT="-W:deprecated" bundle exec rspec --no-color 2>&1 | grep -i "keyword" | sort | uniq -c | sort -rn | head -20
 ```
 
@@ -67,16 +67,16 @@ grep -rn "YAML\.load\b\|Psych\.load\b" app/ lib/ config/ --include="*.rb" 2>/dev
 
 Each match is a potential security issue and will fail in Psych 4 (Ruby 3.1+) with untrusted YAML.
 
-### 3.2 → 3.3: `it` as reserved block parameter
+### → 3.4: `it` as reserved block parameter (warnings in 3.2–3.3, breaks in 3.4)
 
 ```bash
-grep -rn "\bit\b" app/ spec/ --include="*.rb" 2>/dev/null | grep -v "it ['\"]" | grep -v "#" | head -20
+grep -rn "\bit\b" app/ spec/ --include="*.rb" 2>/dev/null | grep -v "it ['\"]" | grep -v "^\s*#" | head -20
 ```
 
 ### 3.3 → 3.4: stdlib gem removals
 
 ```bash
-for lib in base64 csv drb mutex_m nkf bigdecimal; do
+for lib in base64 csv drb mutex_m nkf bigdecimal ostruct; do
   count=$(grep -rn "require ['\"]$lib['\"]" app/ lib/ --include="*.rb" 2>/dev/null | wc -l)
   [[ $count -gt 0 ]] && echo "$lib: $count occurrences (must add to Gemfile in Ruby 3.4)"
 done
@@ -100,11 +100,11 @@ RAILS_ENV=test bundle exec rails test 2>&1 | grep -E "DEPRECATION|deprecated" | 
 
 ```bash
 echo "update_attributes: $(grep -rn '\.update_attributes(' app/ --include='*.rb' 2>/dev/null | wc -l)"
-echo "before_filter: $(grep -rn 'before_filter\|after_filter\|around_filter' app/ --include='*.rb' 2>/dev/null | wc -l)"
+echo "before_filter: $(grep -rEn 'before_filter|after_filter|around_filter' app/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "redirect_to :back: $(grep -rn 'redirect_to :back' app/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "require_dependency: $(grep -rn 'require_dependency' app/ lib/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "HABTM: $(grep -rn 'has_and_belongs_to_many' app/ --include='*.rb' 2>/dev/null | wc -l)"
-echo "old enum syntax: $(grep -rn '^ *enum [a-z_]*:' app/ --include='*.rb' 2>/dev/null | wc -l)"
+echo "old enum syntax: $(grep -rEn '^ *enum [a-z_]+:' app/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "open redirect risk: $(grep -rn 'redirect_to.*params\[' app/controllers/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "render text:: $(grep -rn 'render text:' app/ --include='*.rb' 2>/dev/null | wc -l)"
 ```
@@ -118,15 +118,14 @@ bundle exec rails zeitwerk:check 2>&1 | head -20
 ## Step 5: Gem Compatibility Audit
 
 ```bash
-# All gems with current versions
-grep -E "^    [a-z]" Gemfile.lock | sed 's/^ *//' | sort > /tmp/rut-current-gems.txt
-cat /tmp/rut-current-gems.txt | head -50
+# All gems with current versions (match entries with a version in parens to avoid PLATFORMS section)
+grep -E "^    [a-z][a-z0-9_-]+ \(" Gemfile.lock | sed 's/^ *//' | sort | head -50
 
 # Check for outdated gems
 bundle outdated 2>/dev/null | head -30
 ```
 
-Cross-reference against `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/compatibility-matrix.md` for Rails-adjacent gems.
+If `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/compatibility-matrix.md` exists, read it for Rails-adjacent gem compatibility guidance.
 
 For Ruby version compatibility, flag gems with native extensions — these must be reinstalled for the new Ruby binary:
 ```bash
@@ -142,7 +141,7 @@ Skip if no Rails detected.
 bundle exec rails db:migrate:status 2>/dev/null | grep "^  down" | head -10
 
 # Risky migration patterns
-grep -rn "execute\|remove_column\|drop_table\|rename_column\|change_column" db/migrate/ --include="*.rb" 2>/dev/null | grep -v "reversible\|# safe" | wc -l
+grep -rEn "execute|remove_column|drop_table|rename_column|change_column" db/migrate/ --include="*.rb" 2>/dev/null | grep -Ev "reversible|# safe" | wc -l
 
 # Concurrent index safety
 grep -rn "add_index" db/migrate/ --include="*.rb" 2>/dev/null | grep -v "algorithm: :concurrently" | wc -l
@@ -151,7 +150,7 @@ grep -rn "add_index" db/migrate/ --include="*.rb" 2>/dev/null | grep -v "algorit
 grep -E "adapter:" config/database.yml 2>/dev/null | head -3
 ```
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/risky-patterns.md` for detailed pattern guidance.
+If `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/risky-patterns.md` exists, read it for detailed risky pattern guidance.
 
 ## Step 7: RuboCop Target Version Gap
 
@@ -187,7 +186,7 @@ Upgrade Path: [list intermediate steps if multi-version]
 ### Stdlib Removals (Ruby 3.4 only)
 - [list: gem_name: N occurrences]
 
-### `it` Variable Conflicts (Ruby 3.3)
+### `it` Variable Conflicts (Ruby 3.4)
 - [N] potential conflicts
 
 ## Rails Deprecations (if Rails)
