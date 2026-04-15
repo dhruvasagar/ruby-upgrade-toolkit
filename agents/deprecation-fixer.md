@@ -29,6 +29,8 @@ Named controller/model + deprecation mention is a clear trigger.
 </commentary>
 </example>
 
+You can also fix specific files directly without this agent using `/ruby-upgrade-toolkit:fix ruby:X.Y.Z scope:path`.
+
 model: inherit
 color: green
 tools: ["Read", "Edit", "Bash", "Grep", "Glob"]
@@ -128,8 +130,10 @@ Wait for confirmation before proceeding with complex fixes.
 After processing all files in scope:
 
 ```bash
-RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" 2>/dev/null || echo "0 deprecation warnings"
+RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" || true
 ```
+
+After all files are fixed, run `/ruby-upgrade-toolkit:status` to confirm overall upgrade health.
 
 **Output Format (per file):**
 
