@@ -216,6 +216,14 @@ AllCops:
 
 ## Step 6: Iterative RSpec Loop
 
+Before starting the fix loop, capture the failure count from the pre-upgrade baseline (from the audit report or by running RSpec now):
+
+```bash
+bundle exec rspec --no-color --format progress 2>&1 | tail -5
+```
+
+Note the number of failures as `BASELINE_FAILURES`. In the summary, only count failures **above** this baseline as upgrade-introduced regressions. If the baseline already had failures, document them separately as pre-existing and do not attempt to fix them unless the user explicitly asks.
+
 ```bash
 bundle exec rspec --no-color --format progress 2>&1 | tail -30
 ```

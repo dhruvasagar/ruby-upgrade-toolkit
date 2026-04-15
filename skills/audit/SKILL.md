@@ -41,6 +41,8 @@ fi
 
 Record: pass/fail status, example count, failure count.
 
+> **If the test suite is FAILING before the upgrade begins, surface this as the first item in the findings report under a `## ⚠️ Pre-existing Failures` section. These failures are NOT caused by the upgrade. Do not count them against upgrade risk. Instruct the user to fix them before starting the upgrade or explicitly document them as known pre-existing issues.**
+
 ## Step 3: Ruby Breaking Changes Audit
 
 Run these checks based on the Ruby version being upgraded FROM and TO.
