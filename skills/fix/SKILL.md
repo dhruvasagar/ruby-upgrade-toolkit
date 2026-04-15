@@ -127,7 +127,7 @@ data = YAML.safe_load(content, permitted_classes: [Date, Symbol, MyClass])
 Only run this section when upgrading to Ruby 3.4.
 
 ```bash
-grep -rEn "\bit\b" ${SCOPE:-app/ spec/} --include="*.rb" | grep -v "it ['\"]" | grep -v "^\s*#"
+grep -rEn "\bit\b" ${SCOPE:-app/ spec/} --include="*.rb" | grep -v "it ['\"]" | grep -v "^[[:space:]]*#"
 ```
 
 For each match inside a block body, rename `it` to a descriptive variable name. Read the surrounding context before renaming.

@@ -35,9 +35,9 @@ fi
 
 ```bash
 if [[ -d "spec" ]]; then
-  DEPR=$(RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" 2>/dev/null || echo 0)
+  DEPR=$(RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" || true)
 else
-  DEPR=$(RAILS_ENV=test bundle exec rails test 2>&1 | grep -c "DEPRECATION" 2>/dev/null || echo 0)
+  DEPR=$(RAILS_ENV=test bundle exec rails test 2>&1 | grep -c "DEPRECATION" || true)
 fi
 echo "Deprecation warnings: $DEPR"
 ```
