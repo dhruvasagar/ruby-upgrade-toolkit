@@ -142,11 +142,19 @@ Only run this section when upgrading to Ruby 3.4.
 # Find `it` used as a block variable (receiver or assignment target)
 grep -rEn "^\s*it\." ${SCOPE:-app/ lib/} --include="*.rb" 2>/dev/null | grep -v "^[[:space:]]*#"
 
-# Broader search, excluding common false positives
-grep -rEn "[^a-z_]it\b[^'\"\[]" ${SCOPE:-app/ lib/} --include="*.rb" 2>/dev/null \
-  | grep -v "^[[:space:]]*#" \
-  | grep -v "it ['\"]" \
-  | grep -v "bit\b\|commit\b\|submit\b\|permit\b\|limit\b\|edit\b\|visit\b\|digit\b\|habit\b\|orbit\b"
+# Broader search using Ruby for correct word-boundary detection (grep -P not available on macOS)
+SCOPE_DIR="${SCOPE:-app lib}"
+ruby -r find -e '
+  Find.find(*ENV["SCOPE_DIR"].split) do |f|
+    next unless f.end_with?(".rb") && File.file?(f)
+    File.readlines(f).each_with_index do |line, i|
+      next if line =~ /^\s*#/
+      next if line =~ /\bit\s+['"'"'\"]/
+      next if line =~ /\b(bit|commit|submit|permit|limit|edit|visit|digit|habit|orbit)\b/
+      puts "#{f}:#{i+1}:#{line.chomp}" if line =~ /(?<![a-z_0-9])it(?![a-z_0-9?!])/
+    end
+  end
+' 2>/dev/null
 ```
 
 For each match, read 5 lines of context around it to confirm `it` is truly a block parameter variable (not an RSpec test call). When confirmed, rename `it` to a descriptive name based on what the block iterates over (e.g., `it` in `items.each { it.save }` → `item`).

@@ -93,12 +93,18 @@ Only a concern when upgrading TO Ruby 3.4. `it` as a bare method call inside a b
 # Step 1: Find bare `it` used as a receiver or assigned — most reliable signal
 grep -rEn "^\s*it\." app/ lib/ --include="*.rb" 2>/dev/null | grep -v "^[[:space:]]*#" | head -20
 
-# Step 2: Find `it` used on the right side of assignment or in expressions
-grep -rEn "[^a-z_]it\b[^'\"\[]" app/ lib/ --include="*.rb" 2>/dev/null \
-  | grep -v "^[[:space:]]*#" \
-  | grep -v "it ['\"]" \
-  | grep -v "bit\b\|commit\b\|submit\b\|permit\b\|limit\b\|edit\b\|visit\b\|digit\b\|habit\b\|orbit\b" \
-  | head -20
+# Step 2: Find bare `it` in expressions (Ruby one-liner — correct word boundaries, portable)
+ruby -r find -e '
+  Find.find("app", "lib") do |f|
+    next unless f.end_with?(".rb") && File.file?(f)
+    File.readlines(f).each_with_index do |line, i|
+      next if line =~ /^\s*#/
+      next if line =~ /\bit\s+['"'"'\"]/
+      next if line =~ /\b(bit|commit|submit|permit|limit|edit|visit|digit|habit|orbit)\b/
+      puts "#{f}:#{i+1}:#{line.chomp}" if line =~ /(?<![a-z_0-9])it(?![a-z_0-9?!])/
+    end
+  end
+' 2>/dev/null | head -20
 ```
 
 Each match requires manual inspection to confirm `it` is used as a block variable (not as an RSpec `it "..."` call or a symbol key like `it:` or the word in a string).
