@@ -249,6 +249,9 @@ Upgrade Path: [list intermediate steps if multi-version]
 | HABTM | N |
 | old enum syntax | N |
 | open redirect risk | N |
+| turbolinks gem | N |
+| turbolinks JS refs | N |
+| data-turbolinks attrs | N |
 
 ### Zeitwerk
 [OK / N errors]

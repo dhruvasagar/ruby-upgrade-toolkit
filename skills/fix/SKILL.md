@@ -141,7 +141,7 @@ process(**user_opts)        # ArgumentError in Ruby 3.0 if process(opts={})
 
 # AFTER: wrap literal hash in braces (positional), keep variable as-is
 process({key: "value"})     # passes hash as positional argument
-process(user_opts)          # plain hash variable — no change needed
+process(user_opts)          # remove ** — pass hash directly as positional arg
 ```
 
 If the method definition is NOT available (external gem method), check the gem's changelog for Ruby 3.0 compatibility. Do not apply Pattern B fix to external gem call sites — update the gem instead.
@@ -178,7 +178,7 @@ Only run this section when upgrading to Ruby 3.4.
 grep -rEn "^\s*it\." ${SCOPE:-app/ lib/} --include="*.rb" 2>/dev/null | grep -v "^[[:space:]]*#"
 
 # Broader search using Ruby for correct word-boundary detection (grep -P not available on macOS)
-SCOPE_DIR="${SCOPE:-app lib}"
+export SCOPE_DIR="${SCOPE:-app lib}"
 ruby -r find -e '
   Find.find(*ENV["SCOPE_DIR"].split) do |f|
     next unless f.end_with?(".rb") && File.file?(f)
