@@ -34,8 +34,22 @@ gem "stimulus-rails"  # if using Stimulus
 
 ```bash
 bundle install
+```
+
+Detect your JS pipeline, then run the appropriate installer:
+
+```bash
+# importmap (Rails 7 default — check if config/importmap.rb exists)
 bin/rails turbo:install
 bin/rails stimulus:install  # if using Stimulus
+
+# jsbundling (esbuild/rollup/webpack — check for package.json with build script)
+bin/rails turbo:install:node
+bin/rails stimulus:install  # if using Stimulus
+
+# Webpacker (legacy — check for config/webpacker.yml)
+yarn add @hotwired/turbo-rails
+# Then manually import in app/javascript/application.js — see Step 4
 ```
 
 ## Step 3: Remove Turbolinks
@@ -89,7 +103,7 @@ document.addEventListener("turbo:load", () => { ... })
 | `turbolinks:render` | `turbo:render` |
 | `turbolinks:visit` | `turbo:visit` |
 | `turbolinks:request-start` | `turbo:before-fetch-request` |
-| `turbolinks:request-end` | `turbo:before-fetch-response` |
+| `turbolinks:request-end` | `turbo:before-fetch-response` (fires before processing; no exact 1:1 equivalent) |
 
 ## Step 6: Update Data Attributes
 

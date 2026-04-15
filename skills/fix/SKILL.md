@@ -302,7 +302,7 @@ Found open redirect candidate:
 
 Apply the chosen fix. Do not auto-apply open redirect fixes without this confirmation.
 
-### 5f. Migrate Turbolinks → Turbo (Rails 7+ only)
+### 5e. Migrate Turbolinks → Turbo (Rails 7+ only)
 
 Skip if not upgrading to Rails 7 or later.
 
@@ -317,7 +317,7 @@ If found, follow `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/turb
 4. Update data attributes (`data-turbolinks` → `data-turbo`)
 5. Run RSpec to catch any view/JS integration regressions
 
-### 5e. Update RuboCop target version
+### 5f. Update RuboCop target version
 
 In `.rubocop.yml`, ensure `AllCops.TargetRubyVersion` matches the target Ruby minor version:
 ```yaml
