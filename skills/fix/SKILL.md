@@ -285,11 +285,15 @@ Found open redirect candidate:
 
   Options:
     A) Safe redirect (recommended): only allow relative paths
-       redirect_to(params[:return_to].presence&.start_with?('/') ? params[:return_to] : root_path)
+       # Note: must exclude '//' prefix — browsers treat '//evil.com' as protocol-relative
+       path = params[:return_to].presence
+       redirect_to(path&.start_with?('/') && !path.start_with?('//') ? path : root_path)
 
     B) Allowlist redirect: only allow specific domains
-       allowed = URI.parse(params[:return_to]).host rescue nil
-       redirect_to(allowed && ALLOWED_HOSTS.include?(allowed) ? params[:return_to] : root_path)
+       # Define ALLOWED_HOSTS in config/application.rb or ApplicationController:
+       #   ALLOWED_HOSTS = %w[app.example.com staging.example.com].freeze
+       allowed_host = URI.parse(params[:return_to].to_s).host rescue nil
+       redirect_to(allowed_host && ALLOWED_HOSTS.include?(allowed_host) ? params[:return_to] : root_path)
 
     C) Keep as-is (intentional external redirect — document why)
 
