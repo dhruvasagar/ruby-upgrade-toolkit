@@ -33,11 +33,11 @@ The original `claude-rails-upgrade` plugin was Rails-centric by name and structu
 
 ## Plugin Identity
 
-| Field | Value |
-|-------|-------|
-| Name | `ruby-upgrade-toolkit` |
-| Marketplace source | `./` |
-| Description | Upgrade Ruby and Rails safely: audit breaking changes, plan a phased roadmap, fix code and dependencies, verify with RSpec and RuboCop |
+| Field              | Value                                                                                                                                  |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| Name               | `ruby-upgrade-toolkit`                                                                                                                 |
+| Marketplace source | `./`                                                                                                                                   |
+| Description        | Upgrade Ruby and Rails safely: audit breaking changes, plan a phased roadmap, fix code and dependencies, verify with RSpec and RuboCop |
 
 ---
 
@@ -114,11 +114,11 @@ All commands follow `key:value` pairs. Current versions are always auto-detected
 /ruby-upgrade-toolkit:status
 ```
 
-| Argument | Required on | Description |
-|----------|------------|-------------|
-| `ruby:X.Y.Z` | `audit`, `plan`, `fix` | Target Ruby version |
-| `rails:X.Y` | optional on all | Target Rails version; when present, Rails upgrade is included |
-| `scope:path` | optional on `fix` | Narrow fix to a file or directory |
+| Argument     | Required on            | Description                                                   |
+|--------------|------------------------|---------------------------------------------------------------|
+| `ruby:X.Y.Z` | `audit`, `plan`, `fix` | Target Ruby version                                           |
+| `rails:X.Y`  | optional on all        | Target Rails version; when present, Rails upgrade is included |
+| `scope:path` | optional on `fix`      | Narrow fix to a file or directory                             |
 
 ### Command responsibilities
 
