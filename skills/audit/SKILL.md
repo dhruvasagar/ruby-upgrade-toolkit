@@ -50,16 +50,31 @@ Run these checks based on the Ruby version being upgraded FROM and TO.
 ### 2.7 → 3.0: Keyword argument separation (most impactful change in Ruby 3.x history)
 
 ```bash
-# Methods accepting **kwargs or options hash
-grep -rn "def .*\*\*[a-z_]*" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
-grep -rn "def .*[a-z_]* = {}" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
+# Pattern A — methods that accept **kwargs (callers must NOT pass plain hash)
+echo "Pattern A — **kwargs method definitions:"
+grep -rEn "def [a-z_]+\([^)]*\*\*[a-z_]+" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
 
-# Call sites with potential hash/keyword mismatch
-grep -rEn "\*\*options|\*\*opts|\*\*params|\*\*kwargs" app/ --include="*.rb" 2>/dev/null | wc -l
+# Pattern A — methods with options hash default (callers must NOT pass **hash)
+echo "Pattern A — options={} method definitions:"
+grep -rEn "def [a-z_]+\([^)]*[a-z_]+ = \{\}" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
 
-# Ruby 2.7 deprecation warnings preview (only run if upgrading FROM Ruby 2.7)
-RUBYOPT="-W:deprecated" bundle exec rspec --no-color 2>&1 | grep -i "keyword" | sort | uniq -c | sort -rn | head -20
+# Pattern A call sites — hash variable passed without ** where kwargs expected
+echo "Pattern A — hash variables at call sites (candidates):"
+grep -rEn "[a-z_]+\(options\)|[a-z_]+\(opts\)|[a-z_]+\(params\)" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
+
+# Pattern B — double-splat used at call site where method expects positional hash
+echo "Pattern B — **hash passed to method expecting positional hash:"
+grep -rEn "\*\*options|\*\*opts|\*\*params|\*\*kwargs" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
+
+# Best signal: Ruby 2.7 live deprecation warnings (only run if upgrading FROM Ruby 2.7)
+echo "Live 2.7 deprecation warnings (keyword arg warnings only):"
+RUBYOPT="-W:deprecated" bundle exec rspec --no-color 2>&1 | grep -iE "keyword|hash.*keyword|keyword.*hash" | sort | uniq -c | sort -rn | head -20
 ```
+
+**What to look for:**
+- Pattern A method definitions + Pattern A call sites with mismatched hash: ArgumentError in Ruby 3.0 when caller passes `connect(options)` (plain hash) to a method with `def connect(**opts)`.
+- Pattern B: `**hash` at call site passed to method with `def process(options = {})`: ArgumentError in Ruby 3.0 when caller passes `process(**opts)` to a method expecting a positional hash.
+- Live warnings from 2.7 are the most reliable signal — each warning corresponds to a guaranteed break in 3.0.
 
 ### Any version: YAML.load without permitted_classes
 

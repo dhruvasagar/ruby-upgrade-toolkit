@@ -91,13 +91,25 @@ connect(**options)
 ```
 
 **Pattern B — keywords passed to method expecting positional hash:**
+
+Detection — find `**hash` at call sites where the method accepts `options = {}`:
+```bash
+grep -rEn "\*\*options|\*\*opts|\*\*params|\*\*kwargs" ${SCOPE:-app/ lib/} --include="*.rb" | grep -v "def "
+```
+
+For each match, read the method definition it is calling. If the method signature is `def method_name(options = {})` or `def method_name(opts = {})` (positional hash, NOT `**`), this is Pattern B:
+
 ```ruby
 # BEFORE: double-splat on a method that takes options = {}
-process(**{key: "value"})  # ArgumentError in Ruby 3.0
+process(**{key: "value"})   # ArgumentError in Ruby 3.0
+process(**user_opts)        # ArgumentError in Ruby 3.0 if process(opts={})
 
 # AFTER: drop the double-splat
 process(key: "value")
+process(user_opts)
 ```
+
+If the method definition is NOT available (external gem method), check the gem's changelog for Ruby 3.0 compatibility. Do not apply Pattern B fix to external gem call sites — update the gem instead.
 
 Read each affected file, identify which pattern applies, and apply the minimal fix. Run the file's tests after each file:
 ```bash
