@@ -1,6 +1,6 @@
 ---
 name: upgrade-auditor
-description: Use this agent when a user describes an upgrade intent in natural language — e.g. "I need to upgrade Ruby to 3.3", "upgrade this app from Rails 7 to 8", "what would it take to get to Ruby 3.2?", "how bad is our deprecation situation?", or "audit my app before upgrading". Detects whether the project is Rails or plain Ruby and runs an appropriate read-only audit. Produces a prioritized findings report. Examples:
+description: Use this agent when a user describes an upgrade intent in natural language — e.g. "I need to upgrade Ruby to 3.3", "upgrade this app from Rails 7 to 8", "what would it take to get to Ruby 3.2?", "how bad is our deprecation situation?", "audit my app before upgrading", "we're thinking about upgrading", "our app is on Rails 6 — is that a problem?", or "can we upgrade without breaking things?". Detects whether the project is Rails or plain Ruby and runs an appropriate read-only audit. Produces a prioritized findings report. Examples:
 
 <example>
 Context: User wants to upgrade Ruby and Rails together.
@@ -26,6 +26,24 @@ user: "How hard would it be to upgrade to Rails 8?"
 assistant: "I'll use the upgrade-auditor to give you a complete picture before we decide."
 <commentary>
 Scoping/assessment questions trigger the auditor — user wants the full picture before committing.
+</commentary>
+</example>
+
+<example>
+Context: User expresses passive concern about their current version.
+user: "Our app is still on Rails 6 — is that going to be a problem?"
+assistant: "I'll run the upgrade-auditor to assess where you stand and what an upgrade would involve."
+<commentary>
+Passive version-awareness statements ("our app is on X") signal upgrade concern and should trigger an audit, not just a verbal answer.
+</commentary>
+</example>
+
+<example>
+Context: User is thinking about upgrading but hasn't committed.
+user: "We're considering upgrading our Ruby version — can you check if we're ready?"
+assistant: "I'll use the upgrade-auditor to give you a readiness assessment before you commit to anything."
+<commentary>
+Exploratory or pre-decision upgrade questions trigger the auditor — surface the full picture so the user can decide with real data.
 </commentary>
 </example>
 
@@ -62,9 +80,7 @@ State your inference and proceed — do not ask if it is clear from context.
 
 ## Step 3: Run the Audit
 
-Use the `ruby-upgrade-toolkit:audit` skill, passing the inferred or specified `ruby:X.Y.Z` and (if Rails present) `rails:X.Y` arguments.
-
-The skill handles all audit logic. Follow it completely.
+Read `$CLAUDE_PLUGIN_ROOT/skills/audit/SKILL.md` and follow its instructions completely, passing the inferred or specified `ruby:X.Y.Z` and (if Rails present) `rails:X.Y` arguments.
 
 ## Step 4: Recommend Next Steps
 
