@@ -139,10 +139,17 @@ data = YAML.safe_load(content, permitted_classes: [Date, Symbol, MyClass])
 Only run this section when upgrading to Ruby 3.4.
 
 ```bash
-grep -rEn "\bit\b" ${SCOPE:-app/ spec/} --include="*.rb" | grep -v "it ['\"]" | grep -v "^[[:space:]]*#"
+# Find `it` used as a block variable (receiver or assignment target)
+grep -rEn "^\s*it\." ${SCOPE:-app/ lib/} --include="*.rb" 2>/dev/null | grep -v "^[[:space:]]*#"
+
+# Broader search, excluding common false positives
+grep -rEn "[^a-z_]it\b[^'\"\[]" ${SCOPE:-app/ lib/} --include="*.rb" 2>/dev/null \
+  | grep -v "^[[:space:]]*#" \
+  | grep -v "it ['\"]" \
+  | grep -v "bit\b\|commit\b\|submit\b\|permit\b\|limit\b\|edit\b\|visit\b\|digit\b\|habit\b\|orbit\b"
 ```
 
-For each match inside a block body, rename `it` to a descriptive variable name. Read the surrounding context before renaming.
+For each match, read 5 lines of context around it to confirm `it` is truly a block parameter variable (not an RSpec test call). When confirmed, rename `it` to a descriptive name based on what the block iterates over (e.g., `it` in `items.each { it.save }` → `item`).
 
 ### 3.3 → 3.4: stdlib gem removals
 
