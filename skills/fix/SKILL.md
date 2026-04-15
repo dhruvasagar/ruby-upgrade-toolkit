@@ -74,8 +74,8 @@ An error occurred while installing nokogiri (1.x.y), and Bundler cannot continue
 ```
 Action: The gem's native extension needs to be recompiled for the new Ruby. Run:
 ```bash
-bundle exec gem pristine <gem_name>
-# or reinstall the gem:
+gem pristine <gem_name>
+# if not cached, reinstall:
 gem install <gem_name>
 ```
 
