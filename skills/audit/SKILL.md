@@ -65,7 +65,7 @@ grep -rEn "[a-z_]+\(options\)|[a-z_]+\(opts\)" app/ lib/ --include="*.rb" 2>/dev
 
 # Pattern B — double-splat used at call site where method expects positional hash
 echo "Pattern B — **hash passed to method expecting positional hash:"
-grep -rEn "\*\*options|\*\*opts|\*\*params|\*\*kwargs" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
+grep -rEn "\*\*options|\*\*opts|\*\*kwargs" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
 
 # Best signal: Ruby 2.7 live deprecation warnings (only run if upgrading FROM Ruby 2.7)
 echo "Live 2.7 deprecation warnings (keyword arg warnings only):"
