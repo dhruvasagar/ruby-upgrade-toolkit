@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # PostToolUse hook: Run rubocop --autocorrect on edited Ruby files.
-# OPT-IN: Only runs when .rails-upgrade-rubocop file exists in project root.
-# To enable: touch .rails-upgrade-rubocop
-# To disable: rm .rails-upgrade-rubocop
+# OPT-IN: Only runs when .ruby-upgrade-toolkit-rubocop file exists in project root.
+# To enable: touch .ruby-upgrade-toolkit-rubocop
+# To disable: rm .ruby-upgrade-toolkit-rubocop
 set -euo pipefail
 
 project_dir="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 # Opt-in check — do nothing if flag file is absent
-if [[ ! -f "$project_dir/.rails-upgrade-rubocop" ]]; then
+if [[ ! -f "$project_dir/.ruby-upgrade-toolkit-rubocop" ]]; then
   exit 0
 fi
 

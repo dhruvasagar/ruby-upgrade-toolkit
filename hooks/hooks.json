@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/log-migration.sh\"",
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/ruby-version-sync.sh\"",
             "timeout": 5
           }
         ]
