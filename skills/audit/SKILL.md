@@ -41,7 +41,7 @@ fi
 
 Record: pass/fail status, example count, failure count.
 
-> **If the test suite is FAILING before the upgrade begins, surface this as the first item in the findings report under a `## ⚠️ Pre-existing Failures` section. These failures are NOT caused by the upgrade. Do not count them against upgrade risk. Instruct the user to fix them before starting the upgrade or explicitly document them as known pre-existing issues.**
+> **If the test suite is FAILING before the upgrade begins, surface this as the first item in the findings report under a `## ⚠️ Pre-existing Failures` section. These failures are NOT caused by the upgrade. Do not count them against the Effort Estimate. Instruct the user to fix them before starting the upgrade or explicitly document them as known pre-existing issues.**
 
 ## Step 3: Ruby Breaking Changes Audit
 
@@ -171,6 +171,10 @@ Date: [date]
 Current: Ruby [X.Y.Z] / Rails [X.Y] (or "no Rails detected")
 Target:  Ruby [X.Y.Z] / Rails [X.Y] (or "Ruby only")
 Upgrade Path: [list intermediate steps if multi-version]
+
+## ⚠️ Pre-existing Failures (include only if baseline was FAILING)
+- [N] failures existed before the upgrade — not caused by this upgrade
+- User should fix these independently or document them as known issues
 
 ## Test Suite Baseline
 - Status: [PASSING / FAILING / NOT FOUND]
