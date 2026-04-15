@@ -104,9 +104,9 @@ For each match, read the method definition it is calling. If the method signatur
 process(**{key: "value"})   # ArgumentError in Ruby 3.0
 process(**user_opts)        # ArgumentError in Ruby 3.0 if process(opts={})
 
-# AFTER: drop the double-splat
-process(key: "value")
-process(user_opts)
+# AFTER: wrap literal hash in braces (positional), keep variable as-is
+process({key: "value"})     # passes hash as positional argument
+process(user_opts)          # plain hash variable — no change needed
 ```
 
 If the method definition is NOT available (external gem method), check the gem's changelog for Ruby 3.0 compatibility. Do not apply Pattern B fix to external gem call sites — update the gem instead.

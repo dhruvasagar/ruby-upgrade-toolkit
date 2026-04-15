@@ -59,8 +59,9 @@ echo "Pattern A — options={} method definitions:"
 grep -rEn "def [a-z_]+\([^)]*[a-z_]+ = \{\}" app/ lib/ --include="*.rb" 2>/dev/null | wc -l
 
 # Pattern A call sites — hash variable passed without ** where kwargs expected
-echo "Pattern A — hash variables at call sites (candidates):"
-grep -rEn "[a-z_]+\(options\)|[a-z_]+\(opts\)|[a-z_]+\(params\)" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
+# NOTE: high noise — Rails params calls inflate this count; use live warnings below as the authoritative signal
+echo "Pattern A — hash variables at call sites (approximate, do not use for Effort Estimate):"
+grep -rEn "[a-z_]+\(options\)|[a-z_]+\(opts\)" app/ lib/ --include="*.rb" 2>/dev/null | grep -v "def " | wc -l
 
 # Pattern B — double-splat used at call site where method expects positional hash
 echo "Pattern B — **hash passed to method expecting positional hash:"
@@ -197,9 +198,11 @@ Upgrade Path: [list intermediate steps if multi-version]
 
 ## Critical Issues (will break on target version)
 ### Keyword Argument Mismatches (Ruby 3.0)
-- [N] methods with **kwargs or opts={} patterns
-- [N] call sites with potential mismatch
-- Preview warnings from Ruby 2.7: [N found / 0]
+- Pattern A — **kwargs definitions: [N]
+- Pattern A — opts={} definitions: [N]
+- Pattern A — call site candidates (approximate): [N]
+- Pattern B — **hash at call site: [N]
+- Live 2.7 warnings (authoritative): [N found / 0]
 
 ### Unsafe YAML.load calls
 - [N] occurrences across [N] files: [list files]
