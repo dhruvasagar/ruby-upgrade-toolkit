@@ -220,6 +220,20 @@ Requires `rubocop` in your Gemfile. Only corrects Style and Layout cops — does
 
 Always complete the Ruby upgrade before starting the Rails upgrade when doing both.
 
+## CI Template
+
+A GitHub Actions workflow template is included at `.github/workflows/ruby-upgrade-ci.yml`. Copy it to your application's `.github/workflows/` directory.
+
+It provides three jobs:
+
+| Job | When it runs | What it checks |
+|-----|-------------|----------------|
+| `test` | Always | Ruby deprecation warnings + RSpec/rake test |
+| `rails-test` | Rails projects only (`config/application.rb` present) | DB setup, Zeitwerk, Rails deprecation count, RSpec |
+| `migration-safety` | When `db/migrate/` exists | Risky migration pattern counts |
+
+Adjust the `ruby-version` matrix to the versions relevant to your upgrade path.
+
 ## Contributing
 
 Issues and PRs welcome at [github.com/dhruvasagar/ruby-upgrade-toolkit](https://github.com/dhruvasagar/ruby-upgrade-toolkit).
