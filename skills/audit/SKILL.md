@@ -141,7 +141,7 @@ echo "redirect_to :back: $(grep -rn 'redirect_to :back' app/ --include='*.rb' 2>
 echo "require_dependency: $(grep -rn 'require_dependency' app/ lib/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "HABTM: $(grep -rn 'has_and_belongs_to_many' app/ --include='*.rb' 2>/dev/null | wc -l)"
 echo "old enum syntax: $(grep -rEn '^ *enum [a-z_]+:' app/ --include='*.rb' 2>/dev/null | wc -l)"
-echo "open redirect risk: $(grep -rn 'redirect_to.*params\[' app/controllers/ --include='*.rb' 2>/dev/null | wc -l)"
+echo "open redirect risk: $(grep -rn 'redirect_to.*params\[' app/controllers/ --include='*.rb' 2>/dev/null | wc -l) (requires security review — not auto-fixed)"
 echo "render text:: $(grep -rn 'render text:' app/ --include='*.rb' 2>/dev/null | wc -l)"
 ```
 

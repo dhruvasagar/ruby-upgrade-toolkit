@@ -265,7 +265,38 @@ For each file modified, read it first, apply the fixes precisely (only the depre
 bundle exec rspec spec/corresponding/file_spec.rb --no-color 2>&1 | tail -5
 ```
 
-For complex patterns (`redirect_to params[...]`, `has_and_belongs_to_many`), present the issue to the user and ask for confirmation before changing.
+**For `has_and_belongs_to_many`**: present the join-model migration plan (create model, replace association, add id column) and wait for explicit user confirmation.
+
+**For open redirects (`redirect_to params[...]`)** — these require security judgment, not just a syntax fix. For each occurrence:
+
+```bash
+grep -rn "redirect_to.*params\[" app/controllers/ --include="*.rb"
+```
+
+Read the surrounding code and present to the user:
+
+```
+Found open redirect candidate:
+  File: app/controllers/sessions_controller.rb:47
+  Code: redirect_to params[:return_to]
+
+  Security risk: if params[:return_to] is not validated, an attacker can craft
+  a URL like /login?return_to=https://evil.com to redirect users off-site.
+
+  Options:
+    A) Safe redirect (recommended): only allow relative paths
+       redirect_to(params[:return_to].presence&.start_with?('/') ? params[:return_to] : root_path)
+
+    B) Allowlist redirect: only allow specific domains
+       allowed = URI.parse(params[:return_to]).host rescue nil
+       redirect_to(allowed && ALLOWED_HOSTS.include?(allowed) ? params[:return_to] : root_path)
+
+    C) Keep as-is (intentional external redirect — document why)
+
+  Which option? [A/B/C]
+```
+
+Apply the chosen fix. Do not auto-apply open redirect fixes without this confirmation.
 
 ### 5e. Update RuboCop target version
 
