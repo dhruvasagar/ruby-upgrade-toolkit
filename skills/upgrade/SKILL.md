@@ -35,6 +35,15 @@ Read `Gemfile` and `Gemfile.lock`. Record:
 - `CURRENT_RAILS` — if Rails project (else "none")
 - `TARGET_RAILS` — from arguments (else "none")
 
+**Early exit:** If `CURRENT_RUBY == TARGET_RUBY` and (`TARGET_RAILS` is none OR `CURRENT_RAILS == TARGET_RAILS`), print:
+
+```
+Already at target versions (Ruby TARGET_RUBY / Rails TARGET_RAILS).
+Nothing to do. Run /ruby-upgrade-toolkit:status to confirm readiness.
+```
+
+Then stop.
+
 ## Step 2: Validate Compatibility
 
 If `rails:` argument given, verify TARGET_RUBY is compatible with TARGET_RAILS:
@@ -64,24 +73,41 @@ Each intermediate Rails version becomes its own phase.
 
 ## Step 4: Build the Task List
 
-Using `TodoWrite`, create the full task list before any work begins. This gives the user upfront visibility into every step.
+Using `TodoWrite`, create the **full concrete task list** before any work begins. Generate one task per sub-phase, substituting the real version numbers from the upgrade path computed in Step 3.
 
-Create one task per phase, using this structure (adapt based on actual upgrade path):
+**Example: Ruby 2.7 → 3.3, Rails 6.1 → 8.0 (generates this exact list):**
 
 ```
-[ ] Phase 0 — Prerequisites: confirm test baseline & create upgrade branch
-[ ] Phase 1a — Ruby X.Y.Z: version pins + gem updates
-[ ] Phase 1b — Ruby X.Y.Z: code fixes (keyword args, YAML, stdlib, etc.)
-[ ] Phase 1c — Ruby X.Y.Z: verify (RSpec green + RuboCop clean + status GREEN)
-(repeat 1a–1c for each intermediate Ruby version if multi-step)
-[ ] Phase 2a — Rails X.Y: gem updates + bin/rails app:update
-[ ] Phase 2b — Rails X.Y: deprecation fixes + framework defaults
-[ ] Phase 2c — Rails X.Y: verify (RSpec green + RuboCop clean + status GREEN)
-(repeat 2a–2c for each intermediate Rails version if multi-step)
-[ ] Phase 3 — Final verification: full suite + deprecation count + manual checklist
+Phase 0 — Prerequisites: test baseline + upgrade branch
+Phase 1a — Ruby 3.0.7: activate + version pins + gem updates
+Phase 1b — Ruby 3.0.7: code fixes (keyword args, YAML, stdlib)
+Phase 1c — Ruby 3.0.7: verify (RSpec + RuboCop + GREEN)
+Phase 2a — Ruby 3.1.6: activate + version pins + gem updates
+Phase 2b — Ruby 3.1.6: code fixes
+Phase 2c — Ruby 3.1.6: verify (RSpec + RuboCop + GREEN)
+Phase 3a — Ruby 3.2.4: activate + version pins + gem updates
+Phase 3b — Ruby 3.2.4: code fixes
+Phase 3c — Ruby 3.2.4: verify (RSpec + RuboCop + GREEN)
+Phase 4a — Ruby 3.3.1: activate + version pins + gem updates
+Phase 4b — Ruby 3.3.1: code fixes (it-parameter check)
+Phase 4c — Ruby 3.3.1: verify (RSpec + RuboCop + GREEN)
+Phase 5a — Rails 7.0: gem updates + bin/rails app:update
+Phase 5b — Rails 7.0: deprecation fixes + framework defaults
+Phase 5c — Rails 7.0: verify (RSpec + RuboCop + GREEN)
+Phase 6a — Rails 7.1: gem updates + bin/rails app:update
+Phase 6b — Rails 7.1: deprecation fixes + framework defaults
+Phase 6c — Rails 7.1: verify (RSpec + RuboCop + GREEN)
+Phase 7a — Rails 8.0: gem updates + bin/rails app:update
+Phase 7b — Rails 8.0: deprecation fixes + framework defaults
+Phase 7c — Rails 8.0: verify (RSpec + RuboCop + GREEN)
+Phase 8 — Final verification: full suite + deprecation count + manual checklist
 ```
 
-Omit Rails phases entirely if no `rails:` argument was given.
+**Single-step examples:**
+- Ruby 3.2 → 3.3 only → phases 0, 1a/1b/1c, 2 (final)
+- Rails 7.0 → 8.0 only → phases 0, 1a/1b/1c (7.1), 2a/2b/2c (8.0), 3 (final)
+
+Omit Rails phases entirely if no `rails:` argument was given. Number phases sequentially based on the actual path — do not use placeholder letters like "X.Y".
 
 Print a summary banner before starting:
 
@@ -119,7 +145,32 @@ Record `BASELINE_FAILURES`. If > 0, report them clearly:
 
 Do not abort — continue with the baseline recorded.
 
-### 5b. Upgrade branch
+### 5b. Intermediate Ruby versions installed (multi-step only)
+
+If the upgrade path crosses more than one Ruby minor version, verify each intermediate version is already installed before starting any work:
+
+```bash
+# For each intermediate Ruby version in the path:
+rbenv versions 2>/dev/null || rvm list 2>/dev/null
+```
+
+If any intermediate Ruby version is missing, stop immediately and list what needs to be installed:
+
+```
+⛔ Missing Ruby versions required for this upgrade path.
+   Please install them before starting:
+
+     rbenv install 3.0.7
+     rbenv install 3.1.6
+     rbenv install 3.2.4
+     rbenv install 3.3.1
+
+   Then re-run /ruby-upgrade-toolkit:upgrade ruby:TARGET_RUBY [rails:TARGET_RAILS]
+```
+
+Do not proceed until all required versions are present.
+
+### 5c. Upgrade branch
 
 ```bash
 git status --short
@@ -137,7 +188,7 @@ Proceed on current branch? [yes / no — I'll create the branch first]
 
 Wait for confirmation before proceeding.
 
-### 5c. RuboCop baseline
+### 5d. RuboCop baseline
 
 ```bash
 bundle exec rubocop --parallel --format json 2>/dev/null | python3 -c "
@@ -161,32 +212,38 @@ Mark "Phase 0" complete in TodoWrite. Print:
 
 For each intermediate Ruby version (or just the target if single-step):
 
-### 6a. Version Pins
+### 6a. Activate Ruby + Version Pins
 
-Mark "Phase 1a — Ruby X.Y.Z: version pins + gem updates" as in progress.
+Mark the current Ruby phase's "activate + version pins + gem updates" task as in progress.
 
 Print:
 ```
-━━━ Phase 1a: Ruby version pins ━━━
+━━━ Phase Xa: Ruby X.Y.Z — activate + version pins ━━━
 ```
 
-1. Update `.ruby-version` to the exact target Ruby (e.g. `3.3.1`).
-2. Update the `ruby` directive in `Gemfile` to `"~> X.Y"` (minor pin).
-3. If `.tool-versions` exists, update the Ruby line.
+**First: confirm the target Ruby is active.** Before touching any files, run:
 
 ```bash
 ruby -v
 ```
 
-If the active Ruby is NOT the target version, stop and tell the user:
+If the active Ruby is NOT this phase's target version, stop and tell the user:
 
 ```
-⛔ Ruby X.Y.Z is not active. Please install and activate it:
-     rbenv install X.Y.Z && rbenv local X.Y.Z
+⛔ Ruby X.Y.Z is not active. Please activate it:
+     rbenv local X.Y.Z
    or:
-     rvm install X.Y.Z && rvm use X.Y.Z
-   Then re-run /ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]
+     rvm use X.Y.Z
+   Then reply "continue" to resume from here.
 ```
+
+Wait for "continue" before proceeding. Do not update any files until the correct Ruby is confirmed active.
+
+**Once active, update version pins:**
+
+1. Update `.ruby-version` to the exact target Ruby (e.g. `3.3.1`).
+2. Update the `ruby` directive in `Gemfile` to `"~> X.Y"` (minor pin).
+3. If `.tool-versions` exists, update the Ruby line.
 
 ### 6b. Gem Updates
 

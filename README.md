@@ -4,7 +4,17 @@ A Claude Code plugin for upgrading Ruby projects safely — including Ruby on Ra
 
 ## How It Works
 
-The plugin gives Claude a structured, repeatable methodology through four commands that map to a canonical workflow:
+The plugin gives Claude a structured, repeatable methodology. Use the automated pipeline for the fastest path, or drive each step manually for full control.
+
+### Automated pipeline (recommended)
+
+```
+upgrade
+```
+
+One command runs the full pipeline: detects versions, builds a live task list, applies all fixes phase by phase, verifies after each phase, and pauses if anything fails.
+
+### Manual workflow
 
 ```
 audit → plan → fix → status
@@ -72,6 +82,33 @@ git pull
 
 All commands are namespaced under `/ruby-upgrade-toolkit:` to avoid conflicts with other plugins.
 
+### `/ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]`
+
+**The recommended starting point.** Runs the full upgrade pipeline automatically with a live task list.
+
+What it does:
+1. Detects current versions, validates Ruby ↔ Rails compatibility
+2. Computes the full upgrade path (intermediate versions for multi-step upgrades)
+3. Creates a `TodoWrite` task list for every sub-phase before starting
+4. Checks all intermediate Ruby versions are installed (stops early if not)
+5. Confirms a baseline: test failures and RuboCop offenses before any changes
+6. Executes each phase: activate Ruby → version pins → gem updates → code fixes → verify
+7. Rails phases follow after all Ruby phases are complete
+8. Prints a banner and ticks off tasks as each phase completes
+9. On failure: pauses with full error output and three options — investigate+continue, retry the phase, or abort (no rollback)
+
+```bash
+# Automated Ruby-only upgrade
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1
+
+# Automated Ruby + Rails upgrade
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:8.0
+```
+
+Intermediate Ruby versions must be installed via rbenv/rvm before running. The command will tell you exactly which ones are missing if any are absent.
+
+---
+
 ### `/ruby-upgrade-toolkit:audit ruby:X.Y.Z [rails:X.Y]`
 
 Read-only pre-upgrade assessment. Run this first.
@@ -138,9 +175,74 @@ Run this after each `fix` phase. Do not proceed to the next phase if the report 
 
 ## Workflow Examples
 
-Three complete walkthroughs below. Each follows the same four-step loop: **audit → plan → fix → status**. The difference is what arguments you pass and how many fix phases you need.
+Four complete walkthroughs below. Scenario 0 uses the automated `upgrade` command — the fastest path. Scenarios 1–3 use the manual `audit → plan → fix → status` loop for full control.
 
 > **Rule of thumb:** Never skip a `status` check after a fix phase. RED means stop and diagnose — do not proceed to the next phase.
+
+---
+
+### Scenario 0: Automated upgrade (Ruby 3.1 → 3.3, Rails 7.0 → 7.2)
+
+**Starting state:** Ruby 3.1.4, Rails 7.0.8. Single-step Ruby upgrade, single-step Rails upgrade.
+
+Install required Ruby versions first (the command will tell you if any are missing):
+
+```bash
+rbenv install 3.2.4
+rbenv install 3.3.1
+```
+
+Then run one command:
+
+```
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:7.2
+```
+
+Claude immediately creates a task list and starts working through it:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ruby Upgrade Orchestrator
+Ruby:  3.1.4 → 3.3.1
+Rails: 7.0.8 → 7.2
+Path:  Ruby: 3.1 → 3.2 → 3.3 | Rails: 7.0 → 7.2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Task list created. Starting Phase 0.
+
+☑ Phase 0 — Prerequisites: test baseline + upgrade branch
+☐ Phase 1a — Ruby 3.2.4: activate + version pins + gem updates
+☐ Phase 1b — Ruby 3.2.4: code fixes
+☐ Phase 1c — Ruby 3.2.4: verify (RSpec + RuboCop + GREEN)
+☐ Phase 2a — Ruby 3.3.1: activate + version pins + gem updates
+☐ Phase 2b — Ruby 3.3.1: code fixes (it-parameter check)
+☐ Phase 2c — Ruby 3.3.1: verify (RSpec + RuboCop + GREEN)
+☐ Phase 3a — Rails 7.2: gem updates + bin/rails app:update
+☐ Phase 3b — Rails 7.2: deprecation fixes + framework defaults
+☐ Phase 3c — Rails 7.2: verify (RSpec + RuboCop + GREEN)
+☐ Phase 4 — Final verification: full suite + deprecation count + manual checklist
+```
+
+As each phase completes, its task is ticked off. If a phase fails verification, the upgrade pauses:
+
+```
+⛔ UPGRADE PAUSED — Phase 1c: Ruby 3.2.4 verify did not pass verification
+
+Failures introduced by this phase: 2 (above the 0 pre-existing baseline)
+
+  1) UserSerializer#to_json raises on nil input
+     Failure/Error: UserSerializer.new(nil).to_json
+     NoMethodError: undefined method 'name' for nil
+
+━━━ What you can do ━━━
+
+  A) Investigate and fix — resolve the failures yourself, then reply "continue"
+  B) Retry this phase   — reply "retry phase 1c" to re-run phase 1c's fixes
+  C) Abort              — reply "abort" to stop here (changes preserved)
+
+Waiting for your decision...
+```
+
+Fix the issue in `app/serializers/user_serializer.rb`, then reply `continue`. Claude re-runs verification and proceeds automatically if green.
 
 ---
 
