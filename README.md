@@ -4,31 +4,43 @@ A Claude Code plugin for upgrading Ruby projects safely — including Ruby on Ra
 
 ## How It Works
 
-The plugin gives Claude a structured, repeatable methodology for Ruby and Rails upgrades. Two paths are available:
+The plugin gives Claude a structured, repeatable methodology for Ruby and Rails upgrades. The five commands compose — use as many or as few as you need.
 
-### Automated pipeline (recommended)
+### Mode 1: Fully automated
 
 ```
 /ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]
 ```
 
-One command runs everything: detects current versions, validates compatibility, computes the full upgrade path (including all intermediate versions), creates a live task list, applies fixes phase by phase, verifies with RSpec and RuboCop after each phase, and pauses with a clear recovery menu if anything fails.
+One command runs everything: detects versions, validates compatibility, computes the full upgrade path (including intermediate versions), creates a live task list, applies fixes phase by phase, verifies after each phase, and pauses with a recovery menu if anything fails.
 
 **Use this when** you want to move quickly and trust Claude to sequence and execute the work.
 
-### Manual workflow
+### Mode 2: Review first, then automate (recommended for first-time upgrades)
+
+```
+/ruby-upgrade-toolkit:audit ruby:X.Y.Z [rails:X.Y]   # understand the scope
+/ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y]    # review the phase sequence
+/ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y] # execute the plan
+```
+
+`audit` surfaces breaking changes and gives an effort estimate before touching any code. `plan` shows exactly which phases will run and in what order. Once you're comfortable with the plan, `upgrade` executes the same sequence automatically — no need to re-specify anything.
+
+**Use this when** you're doing a major version jump, have a large codebase, or want to understand the scope before committing to execution.
+
+### Mode 3: Fully manual (maximum control)
 
 ```
 /ruby-upgrade-toolkit:audit ruby:X.Y.Z [rails:X.Y]   # read-only scan
 /ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y]    # phased roadmap
-/ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y]     # apply one phase
+/ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y]     # apply one phase at a time
 /ruby-upgrade-toolkit:status                          # verify before proceeding
 ```
 
-**Use this when** you want to review each phase before executing it, apply fixes to a specific scope, or resume a partially completed upgrade.
+**Use this when** you want to inspect and approve changes phase by phase, apply fixes to a specific scope (`scope:path`), or resume a partially completed upgrade.
 
 **Why the order matters:**
-- `audit` is read-only — zero risk, surfaces breaking changes and effort before you touch anything
+- `audit` is read-only — zero risk, surfaces breaking changes and effort before touching anything
 - `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order
 - `fix` applies one phase at a time — version pins, gem updates, code fixes, then iterative RSpec and RuboCop until green
 - `status` is your gate — RED means stop and diagnose, do not proceed to the next phase
