@@ -9,7 +9,7 @@ The plugin gives Claude a structured, repeatable methodology. Use the automated 
 ### Automated pipeline (recommended)
 
 ```
-upgrade
+/ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]
 ```
 
 One command runs the full pipeline: detects versions, builds a live task list, applies all fixes phase by phase, verifies after each phase, and pauses if anything fails.
@@ -43,7 +43,14 @@ Or use the interactive UI: run `/plugin`, go to the **Discover** tab, search for
 
 ```bash
 git clone https://github.com/dhruvasagar/ruby-upgrade-toolkit
-/plugin local add /path/to/ruby-upgrade-toolkit
+```
+
+Then add the cloned directory as a local marketplace and install:
+
+```
+/plugin marketplace add /path/to/ruby-upgrade-toolkit
+/plugin install ruby-upgrade-toolkit
+/reload-plugins
 ```
 
 ## Updating
@@ -183,9 +190,9 @@ Four complete walkthroughs below. Scenario 0 uses the automated `upgrade` comman
 
 ### Scenario 0: Automated upgrade (Ruby 3.1 → 3.3, Rails 7.0 → 7.2)
 
-**Starting state:** Ruby 3.1.4, Rails 7.0.8. Single-step Ruby upgrade, single-step Rails upgrade.
+**Starting state:** Ruby 3.1.4, Rails 7.0.8. Two Ruby minor hops (3.1 → 3.2 → 3.3), two Rails minor hops (7.0 → 7.1 → 7.2).
 
-Install required Ruby versions first (the command will tell you if any are missing):
+Install required Ruby versions first (the command will tell you exactly which are missing if any):
 
 ```bash
 rbenv install 3.2.4
@@ -198,28 +205,31 @@ Then run one command:
 /ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:7.2
 ```
 
-Claude immediately creates a task list and starts working through it:
+Claude detects versions, builds the full concrete task list, and starts working through it:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Ruby Upgrade Orchestrator
 Ruby:  3.1.4 → 3.3.1
 Rails: 7.0.8 → 7.2
-Path:  Ruby: 3.1 → 3.2 → 3.3 | Rails: 7.0 → 7.2
+Path:  Ruby: 3.1 → 3.2 → 3.3 | Rails: 7.0 → 7.1 → 7.2
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task list created. Starting Phase 0.
 
-☑ Phase 0 — Prerequisites: test baseline + upgrade branch
+☑ Phase 0  — Prerequisites: test baseline + upgrade branch
 ☐ Phase 1a — Ruby 3.2.4: activate + version pins + gem updates
 ☐ Phase 1b — Ruby 3.2.4: code fixes
 ☐ Phase 1c — Ruby 3.2.4: verify (RSpec + RuboCop + GREEN)
 ☐ Phase 2a — Ruby 3.3.1: activate + version pins + gem updates
 ☐ Phase 2b — Ruby 3.3.1: code fixes (it-parameter check)
 ☐ Phase 2c — Ruby 3.3.1: verify (RSpec + RuboCop + GREEN)
-☐ Phase 3a — Rails 7.2: gem updates + bin/rails app:update
-☐ Phase 3b — Rails 7.2: deprecation fixes + framework defaults
-☐ Phase 3c — Rails 7.2: verify (RSpec + RuboCop + GREEN)
-☐ Phase 4 — Final verification: full suite + deprecation count + manual checklist
+☐ Phase 3a — Rails 7.1: gem updates + bin/rails app:update
+☐ Phase 3b — Rails 7.1: deprecation fixes + framework defaults
+☐ Phase 3c — Rails 7.1: verify (RSpec + RuboCop + GREEN)
+☐ Phase 4a — Rails 7.2: gem updates + bin/rails app:update
+☐ Phase 4b — Rails 7.2: deprecation fixes + framework defaults
+☐ Phase 4c — Rails 7.2: verify (RSpec + RuboCop + GREEN)
+☐ Phase 5  — Final verification: full suite + deprecation count + manual checklist
 ```
 
 As each phase completes, its task is ticked off. If a phase fails verification, the upgrade pauses:
@@ -689,14 +699,28 @@ Suggested Next Step: Update CI/CD rails version, update Dockerfiles, merge.
 
 ---
 
-### Quick reference: scoped fixes and ad-hoc checks
+### Quick reference
 
 ```bash
-# Fix deprecations in a single file
-/ruby-upgrade-toolkit:fix ruby:3.2.4 rails:8.0 scope:app/models/order.rb
+# Full automated upgrade (recommended starting point)
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:8.0
+
+# Read-only scan before touching anything
+/ruby-upgrade-toolkit:audit ruby:3.3.1 rails:8.0
+
+# Generate a phased roadmap without executing it
+/ruby-upgrade-toolkit:plan ruby:3.3.1 rails:8.0
+
+# Apply fixes for a specific phase manually
+/ruby-upgrade-toolkit:fix ruby:3.3.1
+/ruby-upgrade-toolkit:fix ruby:3.3.1 rails:8.0
+
+# Fix deprecations in a single file (gem/pin changes still apply project-wide)
+/ruby-upgrade-toolkit:fix ruby:3.3.1 rails:8.0 scope:app/models/order.rb
 
 # Fix an entire directory
-/ruby-upgrade-toolkit:fix ruby:3.2.4 rails:8.0 scope:app/controllers/
+/ruby-upgrade-toolkit:fix ruby:3.3.1 rails:8.0 scope:app/controllers/
 
 # Check upgrade health at any point without making changes
 /ruby-upgrade-toolkit:status
