@@ -4,7 +4,7 @@ A Claude Code plugin for upgrading Ruby projects safely — including Ruby on Ra
 
 ## How It Works
 
-The plugin gives Claude a structured, repeatable methodology. Use the automated pipeline for the fastest path, or drive each step manually for full control.
+The plugin gives Claude a structured, repeatable methodology for Ruby and Rails upgrades. Two paths are available:
 
 ### Automated pipeline (recommended)
 
@@ -12,19 +12,26 @@ The plugin gives Claude a structured, repeatable methodology. Use the automated 
 /ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]
 ```
 
-One command runs the full pipeline: detects versions, builds a live task list, applies all fixes phase by phase, verifies after each phase, and pauses if anything fails.
+One command runs everything: detects current versions, validates compatibility, computes the full upgrade path (including all intermediate versions), creates a live task list, applies fixes phase by phase, verifies with RSpec and RuboCop after each phase, and pauses with a clear recovery menu if anything fails.
+
+**Use this when** you want to move quickly and trust Claude to sequence and execute the work.
 
 ### Manual workflow
 
 ```
-audit → plan → fix → status
+/ruby-upgrade-toolkit:audit ruby:X.Y.Z [rails:X.Y]   # read-only scan
+/ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y]    # phased roadmap
+/ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y]     # apply one phase
+/ruby-upgrade-toolkit:status                          # verify before proceeding
 ```
 
-**Why this order matters:**
-- `audit` is read-only — zero risk, run it first to understand the full scope before touching code
-- `plan` uses audit findings to sequence work correctly — Ruby phases before Rails phases, intermediate versions before final target
-- `fix` applies changes phase by phase — gem updates, code fixes, then iterative RSpec and RuboCop until green
-- `status` is your checkpoint after each fix phase — confirms green before you proceed
+**Use this when** you want to review each phase before executing it, apply fixes to a specific scope, or resume a partially completed upgrade.
+
+**Why the order matters:**
+- `audit` is read-only — zero risk, surfaces breaking changes and effort before you touch anything
+- `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order
+- `fix` applies one phase at a time — version pins, gem updates, code fixes, then iterative RSpec and RuboCop until green
+- `status` is your gate — RED means stop and diagnose, do not proceed to the next phase
 
 ## Installation
 
@@ -378,7 +385,7 @@ Scope: full project
 - .github/workflows/ci.yml: update ruby-version from 2.7 to 3.0
 ```
 
-#### Step 3a — Checkpoint
+#### Checkpoint after Phase 1
 
 ```
 /ruby-upgrade-toolkit:status
@@ -394,7 +401,7 @@ RuboCop offenses: 0
 
 GREEN — proceed to Phase 2.
 
-#### Step 3b–3d — Phases 2, 3, 4 (repeat the pattern)
+#### Steps 3b–3d — Phases 2, 3, 4 (repeat the pattern)
 
 ```
 rbenv local 3.1.6
@@ -430,6 +437,8 @@ Suggested Next Step: Update CI/CD ruby-version and merge your upgrade branch.
 ### Scenario 2: Coordinated Ruby + Rails upgrade (Ruby 2.7 → 3.3, Rails 6.1 → 8.0)
 
 **Starting state:** Ruby 2.7.8, Rails 6.1.7, full Rails app with RSpec, PostgreSQL.
+
+> **Tip:** This scenario can be run automatically with `/ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:8.0`. The manual walkthrough below is useful when you want to inspect each phase before proceeding.
 
 **Key rule:** Always complete the full Ruby upgrade before starting the Rails upgrade. Ruby and Rails upgrades interact — attempting both simultaneously creates a debugging nightmare.
 
@@ -510,13 +519,24 @@ The plan sequences Ruby phases first, Rails phases second:
 
 #### Step 3 — Ruby upgrade phases (same as Scenario 1)
 
-Work through Phases 1–4 exactly as in Scenario 1. After each phase:
+Work through Phases 1–4 exactly as in Scenario 1. Activate each Ruby version before running its fix phase:
 
 ```
-/ruby-upgrade-toolkit:fix ruby:3.0.7  →  /ruby-upgrade-toolkit:status  (GREEN)
-/ruby-upgrade-toolkit:fix ruby:3.1.6  →  /ruby-upgrade-toolkit:status  (GREEN)
-/ruby-upgrade-toolkit:fix ruby:3.2.4  →  /ruby-upgrade-toolkit:status  (GREEN)
-/ruby-upgrade-toolkit:fix ruby:3.3.1  →  /ruby-upgrade-toolkit:status  (GREEN)
+rbenv local 3.0.7
+/ruby-upgrade-toolkit:fix ruby:3.0.7
+/ruby-upgrade-toolkit:status   # must be GREEN
+
+rbenv local 3.1.6
+/ruby-upgrade-toolkit:fix ruby:3.1.6
+/ruby-upgrade-toolkit:status   # must be GREEN
+
+rbenv local 3.2.4
+/ruby-upgrade-toolkit:fix ruby:3.2.4
+/ruby-upgrade-toolkit:status   # must be GREEN
+
+rbenv local 3.3.1
+/ruby-upgrade-toolkit:fix ruby:3.3.1
+/ruby-upgrade-toolkit:status   # must be GREEN
 ```
 
 Do not start Rails phases until the final Ruby status is GREEN.
@@ -580,6 +600,8 @@ Suggested Next Step: Update CI/CD ruby-version and rails version, update Dockerf
 ### Scenario 3: Rails-only upgrade (Ruby unchanged, Rails 7.0 → 8.0)
 
 **Starting state:** Ruby 3.2.4 (staying on 3.2), Rails 7.0.8. No Ruby version change needed.
+
+> **Tip:** This scenario can be run automatically with `/ruby-upgrade-toolkit:upgrade ruby:3.2.4 rails:8.0`. Pass the current Ruby version — the upgrade command detects no Ruby change is needed and skips Ruby phases entirely.
 
 Pass the current Ruby version in all commands — the fix skill detects that it matches the active Ruby and skips Ruby-specific changes, applying only Rails fixes.
 
