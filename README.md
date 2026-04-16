@@ -20,15 +20,52 @@ audit → plan → fix → status
 
 ### Via Claude Code marketplace
 
-```bash
-/plugin marketplace add dhruvasagar/ruby-upgrade-toolkit
+Add the marketplace and install the plugin:
+
 ```
+/plugin marketplace add dhruvasagar/ruby-upgrade-toolkit
+/plugin install ruby-upgrade-toolkit@dhruvasagar
+```
+
+Or use the interactive UI: run `/plugin`, go to the **Discover** tab, search for `ruby-upgrade-toolkit`, and click Install.
 
 ### Local development
 
 ```bash
 git clone https://github.com/dhruvasagar/ruby-upgrade-toolkit
 /plugin local add /path/to/ruby-upgrade-toolkit
+```
+
+## Updating
+
+### Marketplace install
+
+Uninstall and reinstall to get the latest version:
+
+```
+/plugin uninstall ruby-upgrade-toolkit@dhruvasagar
+/plugin install ruby-upgrade-toolkit@dhruvasagar
+```
+
+Then reload without restarting Claude Code:
+
+```
+/reload-plugins
+```
+
+To enable auto-updates for this marketplace, run `/plugin`, go to the **Marketplaces** tab, select `dhruvasagar`, and toggle **Enable auto-update**. When an update is detected at startup, Claude Code will prompt you to run `/reload-plugins`.
+
+### Local install
+
+Pull the latest changes and reload:
+
+```bash
+cd /path/to/ruby-upgrade-toolkit
+git pull
+```
+
+```
+/reload-plugins
 ```
 
 ## Command Reference
