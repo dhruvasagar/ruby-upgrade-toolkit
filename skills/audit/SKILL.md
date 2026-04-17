@@ -3,7 +3,7 @@ name: Upgrade Audit
 description: Use when the user runs /ruby-upgrade-toolkit:audit or asks to audit their project before an upgrade, find what will break, check gem compatibility, or assess the scope of an upgrade. Read-only — never modifies files. Accepts ruby:X.Y.Z and optional rails:X.Y arguments.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
 allowed-tools: Read, Bash, Glob, Grep
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Upgrade Audit
@@ -29,17 +29,17 @@ grep "^    rails " Gemfile.lock 2>/dev/null | head -1
 
 Determine whether this is a Rails project: check for `config/application.rb` or `rails` in Gemfile.
 
+## Step 1b: Validate Target Combination
+
+If a `rails:` argument was given, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/ruby-rails-compatibility.md` and apply its validation rules against the target pair. Surface any hard-incompatibility as the first finding in the report — the upgrade cannot proceed on an incompatible combination.
+
+## Step 1c: Compute Upgrade Path
+
+Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/upgrade-paths.md` and compute the ordered list of intermediate Ruby (and Rails, if given) versions between current and target. Record the path — it informs both the audit's scope and the `Upgrade Path` line in the findings report.
+
 ## Step 2: Test Suite Baseline
 
-```bash
-if [[ -d "spec" ]]; then
-  bundle exec rspec --no-color --format progress 2>&1 | tail -10
-else
-  bundle exec rails test 2>&1 | tail -10 2>/dev/null || echo "No test suite found"
-fi
-```
-
-Record: pass/fail status, example count, failure count.
+Run the test-suite command from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` (section "Test suite — full run") and record: pass/fail status, example count, failure count.
 
 > **If the test suite is FAILING before the upgrade begins, surface this as the first item in the findings report under a `## ⚠️ Pre-existing Failures` section. These failures are NOT caused by the upgrade. Do not count them against the Effort Estimate. Instruct the user to fix them before starting the upgrade or explicitly document them as known pre-existing issues.**
 
@@ -124,13 +124,7 @@ Skip this section if no `rails:` argument and no Rails detected.
 
 ### Dynamic deprecation capture
 
-```bash
-# RSpec
-RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -E "DEPRECATION|deprecated" | sort | uniq -c | sort -rn | head -30
-
-# Or Minitest
-RAILS_ENV=test bundle exec rails test 2>&1 | grep -E "DEPRECATION|deprecated" | sort | uniq -c | sort -rn | head -30
-```
+Use the "Deprecation warnings" section of `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` — it contains both the simple counter and the top-patterns form used here.
 
 ### Static pattern scan
 
@@ -150,9 +144,7 @@ echo "data-turbolinks attrs: $(grep -rn 'data-turbolinks' app/views/ --include='
 
 ### Zeitwerk check (Rails 6+)
 
-```bash
-bundle exec rails zeitwerk:check 2>&1 | head -20
-```
+Use the "Zeitwerk" section of `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md`.
 
 ## Step 5: Gem Compatibility Audit
 

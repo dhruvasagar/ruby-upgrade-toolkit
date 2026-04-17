@@ -328,17 +328,11 @@ AllCops:
 
 ## Step 6: Iterative RSpec Loop
 
-Before starting the fix loop, establish the baseline failure count. Use the failure count from the audit report if one was produced in this session. Otherwise capture it now (before any fixes have been applied):
-
-```bash
-BASELINE_FAILURES=$(bundle exec rspec --no-color --format progress 2>&1 | grep -oE "[0-9]+ failure" | grep -oE "[0-9]+" | head -1); echo "Baseline failures: ${BASELINE_FAILURES:-0}"
-```
+Before starting the fix loop, establish the baseline failure count. Use the failure count from the audit report if one was produced in this session. Otherwise, capture it now using the "Test suite — failure count" block in `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md`.
 
 Keep `BASELINE_FAILURES` in context throughout Step 6. In the Step 8 summary, report only failures **above** this baseline as upgrade-introduced regressions. If the baseline already had failures, document them separately as pre-existing and do not attempt to fix them unless the user explicitly asks.
 
-```bash
-bundle exec rspec --no-color --format progress 2>&1 | tail -30
-```
+Run the full test-suite command from the same reference (section "Test suite — full run") to get the current failure list:
 
 For each failure:
 1. Read the error and backtrace.
@@ -361,19 +355,7 @@ If a failure cannot be traced to the upgrade (pre-existing bug), document it in 
 
 ## Step 7: Iterative RuboCop Loop
 
-```bash
-bundle exec rubocop --parallel 2>&1 | tail -20
-```
-
-First, apply safe auto-corrections:
-```bash
-bundle exec rubocop -a 2>&1 | tail -10
-```
-
-Then review and apply unsafe auto-corrections:
-```bash
-bundle exec rubocop -A 2>&1 | tail -10
-```
+Use the "RuboCop — auto-correct loop" block in `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` — it covers the safe (`-a`) and unsafe (`-A`) auto-correct passes. After both passes, inspect remaining offenses with the "RuboCop — offense count (JSON)" block from the same reference.
 
 For remaining offenses, fix each one manually:
 1. Read the file and the offense message.

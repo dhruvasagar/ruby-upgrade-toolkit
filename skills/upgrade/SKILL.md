@@ -46,30 +46,11 @@ Then stop.
 
 ## Step 2: Validate Compatibility
 
-If `rails:` argument given, verify TARGET_RUBY is compatible with TARGET_RAILS:
-
-| Target Ruby | Min Rails | Recommended |
-|-------------|-----------|-------------|
-| 2.7         | 5.2       | 6.0–6.1     |
-| 3.0         | 6.1       | 7.0         |
-| 3.1         | 7.0       | 7.0–7.1     |
-| 3.2         | 7.0.4     | 7.1         |
-| 3.3         | 7.1       | 7.1–7.2     |
-| 3.4         | 7.2       | 7.2–8.0     |
-
-If incompatible, stop immediately and tell the user which combinations are valid.
+If `rails:` argument given, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/ruby-rails-compatibility.md` and apply its validation rules. On hard incompatibility, stop immediately using the reference's error template.
 
 ## Step 3: Determine Upgrade Path
 
-If upgrading Ruby across more than one minor version (e.g. 2.7 → 3.3), list each intermediate step:
-- 2.7 → 3.0 → 3.1 → 3.2 → 3.3
-
-Each intermediate Ruby version becomes its own phase. The test suite must be green before moving to the next intermediate step.
-
-If upgrading Rails across more than one minor version (e.g. 6.1 → 8.0):
-- 6.1 → 7.0 → 7.1 → 8.0
-
-Each intermediate Rails version becomes its own phase.
+Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/upgrade-paths.md` and use its rules to compute the ordered list of intermediate Ruby (and Rails) versions between current and target. Each intermediate version becomes its own phase — the test suite must be green before moving to the next.
 
 ## Step 4: Build the Task List
 
@@ -127,13 +108,7 @@ Mark "Phase 0" as in progress in TodoWrite.
 
 ### 5a. Test suite baseline
 
-```bash
-if [[ -d "spec" ]]; then
-  bundle exec rspec --no-color --format progress 2>&1 | tail -10
-else
-  bundle exec rails test 2>&1 | tail -10 2>/dev/null || echo "No test suite found"
-fi
-```
+Run the "Test suite — full run" and "Test suite — failure count" blocks from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md`.
 
 Record `BASELINE_FAILURES`. If > 0, report them clearly:
 
@@ -190,16 +165,7 @@ Wait for confirmation before proceeding.
 
 ### 5d. RuboCop baseline
 
-```bash
-bundle exec rubocop --parallel --format json 2>/dev/null | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-offenses = sum(len(f['offenses']) for f in data.get('files', []))
-print(f'RuboCop baseline offenses: {offenses}')
-" 2>/dev/null || bundle exec rubocop --parallel 2>&1 | tail -3
-```
-
-Record `BASELINE_RUBOCOP`.
+Run the "RuboCop — offense count (JSON)" block from the verification suite reference. Record `BASELINE_RUBOCOP`.
 
 Mark "Phase 0" complete in TodoWrite. Print:
 ```
@@ -322,26 +288,14 @@ Print:
 ━━━ Phase 1c: verification ━━━
 ```
 
-Run the full verification suite:
+Run the verification suite:
 
-```bash
-# 1. Confirm Ruby version
-ruby -v
+1. Confirm Ruby version: `ruby -v`
+2. Full test suite — use "Test suite — full run" from the verification suite reference
+3. RuboCop — use "RuboCop — offense count (JSON)"
+4. Deprecation warnings — use "Deprecation warnings" (simple counter)
 
-# 2. Full RSpec suite
-bundle exec rspec --no-color --format progress 2>&1 | tail -15
-
-# 3. RuboCop
-bundle exec rubocop --parallel 2>&1 | tail -5
-
-# 4. Deprecation warnings
-RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" 2>/dev/null || echo "0"
-```
-
-Compute readiness:
-- GREEN: tests passing (only pre-existing failures, if any), RuboCop clean
-- YELLOW: tests passing but deprecation warnings or RuboCop offenses remain
-- RED: new test failures present (above BASELINE_FAILURES)
+Compute readiness per the "Readiness tiers" table in the same reference (GREEN / YELLOW / RED, compared against `BASELINE_FAILURES`).
 
 Print the result:
 ```
@@ -421,13 +375,13 @@ Print:
 ━━━ Phase 2c: verification ━━━
 ```
 
-```bash
-bundle exec rspec --no-color --format progress 2>&1 | tail -15
-bundle exec rubocop --parallel 2>&1 | tail -5
-bundle exec rails runner "puts Rails.version" 2>&1
-RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" 2>/dev/null || echo "0"
-bundle exec rails zeitwerk:check 2>&1 | head -5
-```
+Run these in order — all blocks come from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` unless noted:
+
+1. "Test suite — full run"
+2. "RuboCop — offense count (JSON)"
+3. `bundle exec rails runner "puts Rails.version" 2>&1` (confirms target Rails)
+4. "Deprecation warnings" (simple counter)
+5. "Zeitwerk"
 
 Print the result:
 ```
@@ -453,23 +407,19 @@ Print:
 ━━━ Phase 3: final verification ━━━
 ```
 
-```bash
-# Full suite
-bundle exec rspec --no-color --format progress 2>&1 | tail -15
+Run these in order:
 
-# Zero deprecations
-DEPRECATIONS=$(RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" || echo 0)
-echo "Deprecation warnings: $DEPRECATIONS"
-
-# Zero RuboCop offenses
-bundle exec rubocop --parallel 2>&1 | tail -5
-
-# CI/CD files still referencing old Ruby
-grep -rn "ruby-${CURRENT_RUBY}" .github/ .circleci/ Jenkinsfile .gitlab-ci.yml 2>/dev/null | head -10
-
-# Dockerfiles
-grep -rn "ruby:${CURRENT_RUBY}" Dockerfile* docker-compose* 2>/dev/null | head -10
-```
+1. Full suite — "Test suite — full run" from the verification suite reference
+2. Deprecations — "Deprecation warnings" (simple counter)
+3. RuboCop — "RuboCop — offense count (JSON)"
+4. CI/CD files still referencing old Ruby:
+   ```bash
+   grep -rn "ruby-${CURRENT_RUBY}" .github/ .circleci/ Jenkinsfile .gitlab-ci.yml 2>/dev/null | head -10
+   ```
+5. Dockerfiles still using old base image:
+   ```bash
+   grep -rn "ruby:${CURRENT_RUBY}" Dockerfile* docker-compose* 2>/dev/null | head -10
+   ```
 
 Mark "Phase 3" complete in TodoWrite.
 

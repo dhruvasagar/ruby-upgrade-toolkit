@@ -36,41 +36,15 @@ Check for `.ruby-version`, `Gemfile`, `Gemfile.lock`, and `config/application.rb
 
 ## Step 2: Validate Ruby ↔ Rails Compatibility
 
-If `rails:` argument was given, verify the target Ruby version is compatible with the target Rails version:
-
-| Target Ruby | Minimum Rails | Recommended Rails |
-|-------------|--------------|-------------------|
-| 2.7         | 5.2          | 6.0–6.1           |
-| 3.0         | 6.1          | 7.0               |
-| 3.1         | 7.0          | 7.0–7.1           |
-| 3.2         | 7.0.4        | 7.1               |
-| 3.3         | 7.1          | 7.1–7.2           |
-| 3.4         | 7.2          | 7.2–8.0           |
-
-If the combination is incompatible, surface an error before generating the plan.
+If a `rails:` argument was given, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/ruby-rails-compatibility.md` and apply its validation rules. If the combination is incompatible, surface the reference's error template and stop before generating the plan.
 
 ## Step 3: Identify Upgrade Path
 
-If upgrading Ruby across more than one minor version (e.g. 2.7 → 3.3), list the intermediate steps:
-- 2.7 → 3.0 → 3.1 → 3.2 → 3.3
-Each intermediate step must have a green test suite before proceeding.
-
-If upgrading Rails across more than one minor version (e.g. 6.1 → 8.0), list the intermediate steps:
-- 6.1 → 7.0 → 7.1 → 8.0
+Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/upgrade-paths.md` and use it to compute the ordered list of intermediate versions for Ruby, then Rails (if given). Each intermediate step becomes its own phase in the plan.
 
 ## Step 4: Scan for Known Problem Areas
 
-```bash
-# Test suite baseline
-if [[ -d "spec" ]]; then
-  bundle exec rspec --no-color 2>&1 | tail -5
-else
-  bundle exec rails test 2>&1 | tail -5 2>/dev/null || echo "No test suite detected"
-fi
-
-# Gem outdatedness signal
-bundle outdated 2>/dev/null | head -30
-```
+For the test-suite baseline and the outdated-gems signal, use the canonical commands in `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` (sections "Test suite — full run" and "Outdated gems signal").
 
 For Ruby 2.7 → 3.0 upgrades, scan for keyword argument issues:
 ```bash

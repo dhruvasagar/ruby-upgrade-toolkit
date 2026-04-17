@@ -10,6 +10,8 @@ version: 0.2.0
 
 Generate a health dashboard for the current state of the upgrade. Run this after each fix phase to confirm readiness before proceeding.
 
+This skill is a thin consumer of the canonical verification commands — load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` once at the start and use its blocks for each step below.
+
 ## Step 1: Detect Versions
 
 ```bash
@@ -23,56 +25,27 @@ git branch --show-current 2>/dev/null
 
 ## Step 2: Test Suite
 
-```bash
-if [[ -d "spec" ]]; then
-  bundle exec rspec --no-color --format progress 2>&1 | tail -10
-else
-  bundle exec rails test 2>&1 | tail -10 2>/dev/null || echo "No test suite found"
-fi
-```
+Use the "Test suite — full run" block from the verification suite reference.
 
 ## Step 3: Deprecation Warning Count
 
-```bash
-if [[ -d "spec" ]]; then
-  DEPR=$(RAILS_ENV=test bundle exec rspec --no-color 2>&1 | grep -c "DEPRECATION" || true)
-else
-  DEPR=$(RAILS_ENV=test bundle exec rails test 2>&1 | grep -c "DEPRECATION" || true)
-fi
-echo "Deprecation warnings: $DEPR"
-```
+Use the "Deprecation warnings" block (simple counter form) from the verification suite reference.
 
 ## Step 4: Ruby Warning Count
 
-```bash
-RUBY_WARN=$(RUBYOPT="-W:deprecated" bundle exec ruby -e "require 'bundler/setup'" 2>&1 | grep -c "warning:" || echo 0)
-echo "Ruby warnings: $RUBY_WARN"
-```
+Use the "Ruby warnings" block from the verification suite reference.
 
 ## Step 5: RuboCop Status
 
-```bash
-bundle exec rubocop --parallel --format json 2>/dev/null | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-offenses = sum(len(f['offenses']) for f in data.get('files', []))
-print(f'RuboCop offenses: {offenses}')
-" 2>/dev/null || bundle exec rubocop --parallel 2>&1 | tail -3
-```
+Use the "RuboCop — offense count (JSON)" block from the verification suite reference.
 
 ## Step 6: Gem Compatibility Signal
 
-```bash
-bundle outdated 2>/dev/null | grep -cE "^\s*\*" || echo "0 outdated gems"
-```
+Use the "Outdated gems signal" block from the verification suite reference.
 
 ## Step 7: Zeitwerk (Rails only)
 
-```bash
-if [[ -f "config/application.rb" ]]; then
-  bundle exec rails zeitwerk:check 2>&1 | grep -E "error|OK|expected" | head -5
-fi
-```
+Use the "Zeitwerk" block from the verification suite reference.
 
 ## Step 8: Render the Report
 
@@ -105,9 +78,7 @@ Branch: [branch name]
 
 ## Overall Readiness: [RED / YELLOW / GREEN]
 
-GREEN  — Tests passing, 0 deprecation warnings, 0 RuboCop offenses
-YELLOW — Tests passing but warnings or offenses remain
-RED    — Test failures present — do not proceed to next phase
+See "Readiness tiers" in `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` for the canonical tier definitions.
 
 ## Suggested Next Step
 [Most actionable next step based on the report]
