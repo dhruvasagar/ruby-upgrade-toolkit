@@ -40,7 +40,7 @@ One command runs everything: detects versions, validates compatibility, computes
 
 **Use this when** you want to inspect and approve changes phase by phase, apply fixes to a specific scope (`scope:path`), or resume a partially completed upgrade.
 
-**Manual and automated share the same machinery.** `/upgrade` is literally `/plan` + a loop that invokes `/fix next` until the list is empty, plus some pre-loop prerequisite checks (branch, Ruby installs) and a post-loop Final infra check (CI/CD, Dockerfiles). The per-phase work is byte-identical.
+**Manual and automated share the same machinery.** `/upgrade` is a loop of `/fix next` calls around the same TodoWrite task list that `/plan` creates, plus some pre-loop prerequisite checks (branch, Ruby installs) and a post-loop Final infra check (CI/CD, Dockerfiles). If you already ran `/plan` and did a few `/fix next` iterations manually, `/upgrade` reuses that list as-is (target-matching) and picks up where you left off — progress is preserved. If the invocation target differs or no list exists, upgrade regenerates the list via `/plan`. Either way, the per-phase work is byte-identical.
 
 **Why the order matters:**
 - `audit` is read-only — zero risk, surfaces breaking changes and effort before touching anything
@@ -117,7 +117,7 @@ All commands are namespaced under `/ruby-upgrade-toolkit:` to avoid conflicts wi
 
 What it does:
 1. Detects current versions, validates Ruby ↔ Rails compatibility, computes the full upgrade path
-2. **Delegates to `/plan`** to produce the roadmap + estimates and create the TodoWrite task list
+2. **Reuses an existing TodoWrite task list** if one exists and its implied target matches the invocation args — preserving any progress from earlier `/fix next` iterations. Otherwise, **delegates to `/plan`** to produce the roadmap + estimates and create a fresh list.
 3. Checks all intermediate Ruby versions are installed (stops early if not)
 4. Confirms a baseline: test failures and RuboCop offenses before any changes
 5. Checks/creates an upgrade branch if needed
