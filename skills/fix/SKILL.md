@@ -330,7 +330,7 @@ AllCops:
 
 Before starting the fix loop, establish the baseline failure count. Use the failure count from the audit report if one was produced in this session. Otherwise, capture it now using the "Test suite — failure count" block in `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md`.
 
-Keep `BASELINE_FAILURES` in context throughout Step 6. In the Step 8 summary, report only failures **above** this baseline as upgrade-introduced regressions. If the baseline already had failures, document them separately as pre-existing and do not attempt to fix them unless the user explicitly asks.
+Keep `BASELINE_FAILURES` in context throughout the iterative loop. When verifying and summarising later, report only failures **above** this baseline as upgrade-introduced regressions. If the baseline already had failures, document them separately as pre-existing and do not attempt to fix them unless the user explicitly asks.
 
 Run the full test-suite command from the same reference (section "Test suite — full run") to get the current failure list:
 

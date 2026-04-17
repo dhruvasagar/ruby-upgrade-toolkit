@@ -220,27 +220,20 @@ Print:
 ━━━ Phase Xb: Ruby X.Y.Z — fix delegation ━━━
 ```
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute its **full flow** (Steps 1 through 9) with arguments `ruby:<this_phase_target_ruby>` (no `rails:` on Ruby phases). Fix owns:
-
-- Version pins (Step 2)
-- Gem resolution (Step 3)
-- Ruby code fixes (Step 4)
-- Iterative RSpec + RuboCop green-up (Steps 6–7)
-- Verification + commit prompt (Step 8)
-- Summary (Step 9)
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and run its full flow with arguments `ruby:<this_phase_target_ruby>` (no `rails:` on Ruby phases). Fix applies version pins, resolves gems, applies Ruby code fixes, iterates RSpec and RuboCop to green, runs verification, prompts the user for commit, and produces a summary — all in one invocation. Trust fix to own its internal sequencing; upgrade does not introspect or control which sub-step runs.
 
 **When fix prompts the user for commit confirmation, that prompt is shown to the user** — this is the per-phase checkpoint. The user approves or edits the message; fix makes the commit.
 
 Outcomes from fix:
 
-- **Fix committed successfully** → mark "Phase Xb" complete in TodoWrite. Auto-advance to the next phase (next intermediate Ruby, or Step 7 for Rails, or Step 8 for final verification) **without asking the user**.
+- **Fix committed successfully** → mark "Phase Xb" complete in TodoWrite. Auto-advance to the next phase (next intermediate Ruby, or the Rails phase loop, or final verification) **without asking the user**.
 - **User chose "no" at fix's commit prompt** → working tree is dirty and uncommitted. Pause and print:
   ```
   Phase Xb completed verification but commit was declined.
   Reply "continue" to advance to the next phase (your working tree is dirty),
   or "abort" to stop the upgrade.
   ```
-- **Fix exited RED** (Step 8 verification failed) → invoke Failure Protocol. Fix did not commit; the working tree holds the problematic changes for the user to inspect.
+- **Fix exited RED** (its verification found new failures above baseline) → invoke Failure Protocol. Fix did not commit; the working tree holds the problematic changes for the user to inspect.
 
 ---
 
@@ -255,13 +248,13 @@ Print:
 ━━━ Phase X: Rails X.Y — fix delegation ━━━
 ```
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute its **full flow** (Steps 1 through 9) with arguments `ruby:<final_ruby> rails:<this_phase_target_rails>`. Fix's Steps 2–4 fast-exit because Ruby is already at target; Steps 5a–5f apply the Rails-side changes; Steps 6–9 verify, prompt for commit, and summarise.
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and run its full flow with arguments `ruby:<final_ruby> rails:<this_phase_target_rails>`. Ruby-side work fast-exits because Ruby is already at target; fix applies the Rails-side changes (gem update, `app:update`, framework defaults, deprecation fixes, Turbolinks/Turbo migration, RuboCop target bump), iterates to green, verifies, prompts for commit, and summarises.
 
-User-input pauses inside fix (open redirect option A/B/C, HABTM migration confirmation, commit prompt) run within fix's flow. Upgrade's Failure Protocol only triggers when fix exits RED from its Step 8 verification.
+User-input pauses inside fix (open redirect option A/B/C, HABTM migration confirmation, commit prompt) run within fix's flow. Upgrade's Failure Protocol only triggers when fix exits RED from its verification gate.
 
 Outcomes:
 
-- **Fix committed** → mark phase complete. Auto-advance to next Rails phase or Step 8 — no "continue?" prompt.
+- **Fix committed** → mark phase complete. Auto-advance to next Rails phase or final verification — no "continue?" prompt.
 - **User declined commit at fix prompt** → pause and ask: `continue` (dirty tree) or `abort`.
 - **RED verification** → Failure Protocol.
 
