@@ -3,7 +3,7 @@ name: Upgrade Orchestrator
 description: Use when the user runs /ruby-upgrade-toolkit:upgrade or wants a fully automated Ruby/Rails upgrade pipeline. Orchestrates a phased upgrade by delegating per-phase execution to the fix skill and verification to the status skill. Keeps a live task list, pauses on RED verification, and lets the user continue, retry, or abort. Accepts ruby:X.Y.Z and optional rails:X.Y arguments.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
 allowed-tools: Read, Edit, Bash, Glob, Grep, TodoWrite
-version: 0.4.0
+version: 0.5.0
 ---
 
 # Upgrade Orchestrator
@@ -12,7 +12,7 @@ Run a fully automated, phased Ruby (and optionally Rails) upgrade from start to 
 
 **Architecture.** Upgrade is a thin orchestrator. It owns prerequisite checks (baseline, branch, Ruby installs), the phase loop, banners, the Failure Protocol, and the Final infra checklist. Everything else is delegated:
 
-- **`plan/SKILL.md`** creates the TodoWrite task list — the single shared source of "what phases remain" for both manual and orchestrated flows. Upgrade runs plan at the start and never builds its own list.
+- **`plan/SKILL.md`** creates the TodoWrite task list — the single shared source of "what phases remain" for both manual and orchestrated flows. Upgrade reuses an existing list if its implied target matches the invocation arguments (so a user who ran `/plan` then did a few `/fix next` iterations manually keeps their progress when they later call `/upgrade`); otherwise it re-invokes plan, which overwrites. Upgrade never builds its own list.
 - **`fix/SKILL.md`** owns the complete per-phase flow: apply → iterate to green → verify → prompt for commit → tick off the task. Upgrade drives it by repeatedly invoking `/ruby-upgrade-toolkit:fix next`.
 - **`status/SKILL.md`** is loaded by fix during its verification step; upgrade does not run status directly for per-phase gating.
 - Shared reference data (Ruby↔Rails compatibility matrix, upgrade paths, verification-suite bash) lives in `skills/rails-upgrade-guide/references/`.
@@ -65,9 +65,58 @@ If `rails:` argument given, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide
 
 Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/upgrade-paths.md` and use its rules to compute the ordered list of intermediate Ruby (and Rails) versions between current and target. Each intermediate version becomes its own phase — the test suite must be green before moving to the next.
 
-## Step 4: Delegate Task List Creation to Plan
+## Step 4: Reuse or Create the Task List
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/plan/SKILL.md` and run it with the same `ruby:<TARGET_RUBY> [rails:<TARGET_RAILS>]` arguments. Plan generates the Markdown roadmap (with estimates) AND creates the TodoWrite task list — upgrade does not build its own list and never appends to plan's list.
+Upgrade does not build its own task list; plan owns that. But upgrade checks whether an existing list can be reused before regenerating, so a user who already ran `/plan` (manually or from a previous upgrade run) and completed some phases via `/fix next` keeps their progress.
+
+### 4a. Read the existing list
+
+Call `TodoWrite`/TaskList. Collect all tasks whose subject matches `^Phase \d+ — Ruby|Rails` or `^Final — Infra checks`.
+
+### 4b. Compute the list's implied target
+
+From the collected tasks:
+- Highest-numbered `Phase N — Ruby (\d+\.\d+\.\d+):` → `LIST_TARGET_RUBY` (or `none` if no Ruby tasks)
+- Highest-numbered `Phase N — Rails (\d+\.\d+):` → `LIST_TARGET_RAILS` (or `none` if no Rails tasks)
+
+If no matching tasks exist at all, treat the list as absent → go to 4d.
+
+### 4c. Decide: reuse or regenerate
+
+Reuse the list if **all** of the following hold:
+- `LIST_TARGET_RUBY == TARGET_RUBY` **or** (current Ruby already equals `TARGET_RUBY` and `LIST_TARGET_RUBY == none`)
+- `LIST_TARGET_RAILS == TARGET_RAILS` **or** (`TARGET_RAILS == none` and `LIST_TARGET_RAILS == none`)
+
+Otherwise regenerate (go to 4d). Print which way you went so the user can see it:
+
+```
+Reusing existing task list (target matches): N tasks, M already completed.
+```
+
+or
+
+```
+Existing task list targets Ruby X.Y / Rails A.B, but you invoked upgrade for
+Ruby X'.Y' / Rails A'.B'. Regenerating task list to match the new target.
+```
+
+### 4d. Regenerate via plan
+
+Load `$CLAUDE_PLUGIN_ROOT/skills/plan/SKILL.md` and run it with `ruby:<TARGET_RUBY> [rails:<TARGET_RAILS>]`. Plan generates the Markdown roadmap (with estimates) AND creates the TodoWrite task list, overwriting any existing one per its Step 7 rules.
+
+### 4e. Banner
+
+Regardless of reuse or regeneration, print:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ruby Upgrade Orchestrator
+Ruby:  CURRENT_RUBY → TARGET_RUBY
+Rails: CURRENT_RAILS → TARGET_RAILS  (or "Ruby only")
+Path:  [list intermediate steps if multi-step]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[N tasks total, M pending, M' completed]. Running prerequisites next.
+```
 
 The resulting task list has this shape:
 
@@ -77,18 +126,6 @@ Phase 2 — Ruby X.Y.Z: apply + verify + commit
 ...
 Phase N — Rails X.Y: apply + verify + commit
 Final — Infra checks (CI/CD, Dockerfile) + checklist
-```
-
-Print a summary banner before starting the loop:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Ruby Upgrade Orchestrator
-Ruby:  CURRENT_RUBY → TARGET_RUBY
-Rails: CURRENT_RAILS → TARGET_RAILS  (or "Ruby only")
-Path:  [list intermediate steps if multi-step]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task list created by /plan. Running prerequisites next.
 ```
 
 ## Step 5: Prerequisites (upgrade-owned, not in the task list)

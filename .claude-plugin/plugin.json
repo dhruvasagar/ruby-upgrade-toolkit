@@ -1,6 +1,6 @@
 {
   "name": "ruby-upgrade-toolkit",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Upgrade Ruby and Rails safely: audit breaking changes, plan a phased roadmap, fix code and dependencies, verify with RSpec and RuboCop.",
   "author": {
     "name": "Dhruva Sagar",
