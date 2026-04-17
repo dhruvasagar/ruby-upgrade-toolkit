@@ -1,14 +1,24 @@
 ---
 name: Upgrade Orchestrator
-description: Use when the user runs /ruby-upgrade-toolkit:upgrade or wants a fully automated Ruby/Rails upgrade pipeline. Orchestrates plan → audit → phased fixes → verification end-to-end with a live task list. Accepts ruby:X.Y.Z and optional rails:X.Y arguments. Pauses on failure and lets the user investigate before continuing.
+description: Use when the user runs /ruby-upgrade-toolkit:upgrade or wants a fully automated Ruby/Rails upgrade pipeline. Orchestrates a phased upgrade by delegating per-phase execution to the fix skill and verification to the status skill. Keeps a live task list, pauses on RED verification, and lets the user continue, retry, or abort. Accepts ruby:X.Y.Z and optional rails:X.Y arguments.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
 allowed-tools: Read, Edit, Bash, Glob, Grep, TodoWrite
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Upgrade Orchestrator
 
-Run a fully automated, phased Ruby (and optionally Rails) upgrade from start to finish. Maintain a live task list so the user can see exactly what is done, what is in progress, and what is coming next. Pause and surface any failure clearly before asking whether to continue, retry, or abort.
+Run a fully automated, phased Ruby (and optionally Rails) upgrade from start to finish.
+
+**Architecture.** Upgrade is a pure orchestrator — it owns the task list, phase loop, banners, verification gate, failure protocol, and final summary. Per-phase *execution* is delegated:
+
+- **`fix/SKILL.md`** is the source of truth for how to apply a phase (version pins, gem updates, code fixes, Rails migrations). Upgrade invokes fix per intermediate version with the right arguments and instructs it which step range to run.
+- **`status/SKILL.md`** is the source of truth for the verification gate. Upgrade runs status after each phase and interprets its readiness tier (GREEN / YELLOW / RED).
+- Shared reference data (Ruby↔Rails compatibility matrix, upgrade paths, verification-suite bash) lives in `skills/rails-upgrade-guide/references/` — upgrade loads it the same way the other skills do.
+
+This keeps every piece of logic in exactly one place. If a fix pattern changes, it changes in fix/SKILL.md and upgrade picks it up automatically.
+
+Maintain a live task list so the user can see exactly what is done, what is in progress, and what is coming next. Pause and surface any failure clearly before asking whether to continue, retry, or abort.
 
 ## Argument Parsing
 
@@ -174,26 +184,26 @@ Mark "Phase 0" complete in TodoWrite. Print:
 
 ---
 
-## Step 6: Phase 1 — Ruby Upgrade (repeat for each intermediate version)
+## Step 6: Ruby Phase Loop (repeat for each intermediate Ruby version)
 
-For each intermediate Ruby version (or just the target if single-step):
+Per-phase *execution* is delegated to the `fix` skill. Upgrade orchestrates: activation confirmation, fix invocation with correct arguments, verification gate via `status`, and task-list updates.
 
-### 6a. Activate Ruby + Version Pins
+### 6a. Activate target Ruby
 
 Mark the current Ruby phase's "activate + version pins + gem updates" task as in progress.
 
 Print:
 ```
-━━━ Phase Xa: Ruby X.Y.Z — activate + version pins ━━━
+━━━ Phase Xa: Ruby X.Y.Z — activating + fix delegation ━━━
 ```
 
-**First: confirm the target Ruby is active.** Before touching any files, run:
+Confirm the correct Ruby binary is active:
 
 ```bash
 ruby -v
 ```
 
-If the active Ruby is NOT this phase's target version, stop and tell the user:
+If the active Ruby is NOT this phase's target version, pause:
 
 ```
 ⛔ Ruby X.Y.Z is not active. Please activate it:
@@ -203,101 +213,34 @@ If the active Ruby is NOT this phase's target version, stop and tell the user:
    Then reply "continue" to resume from here.
 ```
 
-Wait for "continue" before proceeding. Do not update any files until the correct Ruby is confirmed active.
+Wait for "continue" before proceeding.
 
-**Once active, update version pins:**
+### 6b. Execute the phase via fix
 
-1. Update `.ruby-version` to the exact target Ruby (e.g. `3.3.1`).
-2. Update the `ruby` directive in `Gemfile` to `"~> X.Y"` (minor pin).
-3. If `.tool-versions` exists, update the Ruby line.
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute **Steps 1 through 4 only** with arguments `ruby:<this_phase_target_ruby>` (no `rails:` on Ruby phases). This applies:
 
-### 6b. Gem Updates
+- Ruby version pins (fix Step 2)
+- Gem dependency resolution (fix Step 3)
+- Ruby version-specific code fixes (fix Step 4)
 
-Print:
-```
-━━━ Phase 1a (continued): gem updates ━━━
-```
+**Stop at the end of fix Step 4.** Do NOT run fix Step 5 (Rails), Step 6 (iterative RSpec), Step 7 (iterative RuboCop), or Step 8 (summary) — upgrade owns its own verification gate and multi-phase summary.
 
-```bash
-bundle install 2>&1
-```
+Surface notable actions from fix as they happen (gem updates, code fix counts, file-level test runs) so the user can follow progress.
 
-Fix gem incompatibilities iteratively using the error patterns from the fix skill (Step 3 in fix/SKILL.md). Update one gem at a time. For each error:
-- "requires Ruby version" → `bundle update <gem>`
-- "Could not find compatible versions" → `bundle update <conflicting_gem>`
-- native extension failure → `gem pristine <gem>` or reinstall
+Mark "Phase Xa" and "Phase Xb" complete in TodoWrite once fix reports Steps 2–4 done.
 
-Print each gem update as it happens:
-```
-  → Updating nokogiri to 1.16.0 (Ruby 3.2 requirement)
-  → bundle install ... OK
-```
+### 6c. Verify Ruby phase
 
-Do not bulk-update all gems. Update one at a time until `bundle install` exits 0.
-
-Mark "Phase 1a" complete in TodoWrite.
-
-### 6c. Code Fixes
-
-Mark "Phase 1b — Ruby X.Y.Z: code fixes" as in progress.
+Mark "Phase Xc — Ruby X.Y.Z: verify" as in progress.
 
 Print:
 ```
-━━━ Phase 1b: Ruby code fixes ━━━
+━━━ Phase Xc: verification ━━━
 ```
 
-Apply all Ruby version-specific code fixes from the fix skill (Step 4 in fix/SKILL.md). For each category, print what is being checked and what was found:
+Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it. Interpret the readiness tier against this upgrade run's `BASELINE_FAILURES` (pre-existing failures count as baseline, not regressions).
 
-```
-  Checking: keyword argument separation (2.7→3.0)
-  Found: 12 potential sites — scanning...
-  Fixed: app/services/payment_service.rb:47 (Pattern A)
-  Fixed: lib/importers/csv_importer.rb:23 (Pattern B)
-  ...
-
-  Checking: YAML.load → YAML.safe_load
-  Found: 3 occurrences — fixing...
-  Fixed: config/initializers/settings.rb:8
-
-  Checking: `it` block parameter conflict (→3.4)
-  Found: 0 occurrences
-```
-
-After each file fix, run that file's specs:
-```bash
-bundle exec rspec spec/path/to/file_spec.rb --no-color 2>&1 | tail -5
-```
-
-If the per-file spec fails after a fix, report it immediately:
-```
-⚠️  Fix introduced a failure in spec/path/to/file_spec.rb
-    Error: [error message]
-    Attempting to correct...
-```
-
-Retry with a corrected fix. If still failing after one retry, pause (see Failure Protocol below).
-
-Mark "Phase 1b" complete in TodoWrite.
-
-### 6d. Verify Ruby Phase
-
-Mark "Phase 1c — Ruby X.Y.Z: verify" as in progress.
-
-Print:
-```
-━━━ Phase 1c: verification ━━━
-```
-
-Run the verification suite:
-
-1. Confirm Ruby version: `ruby -v`
-2. Full test suite — use "Test suite — full run" from the verification suite reference
-3. RuboCop — use "RuboCop — offense count (JSON)"
-4. Deprecation warnings — use "Deprecation warnings" (simple counter)
-
-Compute readiness per the "Readiness tiers" table in the same reference (GREEN / YELLOW / RED, compared against `BASELINE_FAILURES`).
-
-Print the result:
+Print the one-line result:
 ```
   Ruby: X.Y.Z ✓
   RSpec: N examples, N failures (N pre-existing, 0 new) ✓
@@ -305,123 +248,87 @@ Print the result:
   Status: GREEN ✓
 ```
 
-If RED → invoke Failure Protocol (see below).
-If YELLOW → log the warnings, continue to next phase, note in final summary.
+Decision:
+- **GREEN** → mark phase complete, continue to the next intermediate Ruby (or advance to Rails phases / final verification).
+- **YELLOW** → log warnings to the final-summary buffer, continue to next phase.
+- **RED** → invoke Failure Protocol (bottom of this file).
 
-Mark "Phase 1c" complete in TodoWrite.
-
----
-
-## Step 7: Phase 2 — Rails Upgrade (skip entirely if no `rails:` argument)
-
-For each intermediate Rails version (or just the target if single-step):
-
-### 7a. Rails Gem Update + app:update
-
-Mark "Phase 2a — Rails X.Y: gem updates + app:update" as in progress.
-
-Print:
-```
-━━━ Phase 2a: Rails gem updates ━━━
-```
-
-1. Update `gem 'rails', '~> X.Y'` in Gemfile.
-2. `bundle update rails 2>&1 | tail -10`
-3. Fix any cascading gem conflicts (same pattern as Step 6b).
-4. Run `THOR_MERGE=cat bundle exec rails app:update 2>&1`.
-
-For app:update diffs, print what was generated and apply selective changes:
-```
-  Generated: config/initializers/new_framework_defaults_X_Y.rb
-  Updated: config/environments/production.rb (3 changes)
-  Skipped: config/application.rb (intentional customization detected)
-```
-
-Mark "Phase 2a" complete in TodoWrite.
-
-### 7b. Deprecation Fixes + Framework Defaults
-
-Mark "Phase 2b — Rails X.Y: deprecation fixes + framework defaults" as in progress.
-
-Print:
-```
-━━━ Phase 2b: Rails deprecation fixes ━━━
-```
-
-Apply the Rails deprecation fix table from fix/SKILL.md (Step 5d). For each pattern found, print:
-```
-  Fixing: update_attributes → update (N occurrences across N files)
-  Fixing: before_filter → before_action (N occurrences)
-  Fixing: redirect_to :back → redirect_back (N occurrences)
-  ...
-```
-
-Update `config.load_defaults` in `config/application.rb`.
-
-Update `.rubocop.yml` `AllCops.TargetRubyVersion` to match TARGET_RUBY minor.
-
-For open redirect candidates, print each one and pause for user decision (A/B/C) as specified in fix/SKILL.md Step 5d.
-
-For `has_and_belongs_to_many`, print the migration plan and pause for confirmation before touching anything.
-
-Mark "Phase 2b" complete in TodoWrite.
-
-### 7c. Verify Rails Phase
-
-Mark "Phase 2c — Rails X.Y: verify" as in progress.
-
-Print:
-```
-━━━ Phase 2c: verification ━━━
-```
-
-Run these in order — all blocks come from `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` unless noted:
-
-1. "Test suite — full run"
-2. "RuboCop — offense count (JSON)"
-3. `bundle exec rails runner "puts Rails.version" 2>&1` (confirms target Rails)
-4. "Deprecation warnings" (simple counter)
-5. "Zeitwerk"
-
-Print the result:
-```
-  Rails: X.Y ✓
-  RSpec: N examples, N failures (N pre-existing, 0 new) ✓
-  RuboCop: N offenses ✓
-  Zeitwerk: OK ✓
-  Status: GREEN ✓
-```
-
-If RED → invoke Failure Protocol.
-
-Mark "Phase 2c" complete in TodoWrite.
+Mark "Phase Xc" complete in TodoWrite.
 
 ---
 
-## Step 8: Phase 3 — Final Verification
+## Step 7: Rails Phase Loop (skip entirely if no `rails:` argument)
 
-Mark "Phase 3 — Final verification" as in progress.
+Per-phase *execution* is delegated to the `fix` skill. For each intermediate Rails version:
+
+### 7a. Execute the phase via fix
+
+Mark the current Rails phase's "gem updates + app:update" task as in progress.
 
 Print:
 ```
-━━━ Phase 3: final verification ━━━
+━━━ Phase Xa: Rails X.Y — fix delegation ━━━
 ```
 
-Run these in order:
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute **Steps 5a through 5f only** with arguments `ruby:<final_ruby> rails:<this_phase_target_rails>`. Fix's earlier steps (2–4) will fast-exit because Ruby is already at target. The Rails-side steps apply:
 
-1. Full suite — "Test suite — full run" from the verification suite reference
-2. Deprecations — "Deprecation warnings" (simple counter)
-3. RuboCop — "RuboCop — offense count (JSON)"
-4. CI/CD files still referencing old Ruby:
-   ```bash
-   grep -rn "ruby-${CURRENT_RUBY}" .github/ .circleci/ Jenkinsfile .gitlab-ci.yml 2>/dev/null | head -10
-   ```
-5. Dockerfiles still using old base image:
-   ```bash
-   grep -rn "ruby:${CURRENT_RUBY}" Dockerfile* docker-compose* 2>/dev/null | head -10
-   ```
+- Rails gem update + `bin/rails app:update` (fix Steps 5a–5b)
+- Framework defaults (fix Step 5c)
+- Deprecation fixes (fix Step 5d — includes the pause-for-user flow for open redirects and HABTM)
+- Turbolinks → Turbo migration if upgrading to Rails 7+ (fix Step 5e)
+- RuboCop target version bump (fix Step 5f)
 
-Mark "Phase 3" complete in TodoWrite.
+**Stop at the end of fix Step 5f.** Do NOT run fix Steps 6–8.
+
+Any user-input pauses inside fix (open redirect option A/B/C, HABTM migration confirmation) run within fix's flow — upgrade's Failure Protocol is separate and only triggers on phase verification RED.
+
+Mark "Phase Xa" and "Phase Xb" complete in TodoWrite once fix reports Step 5 done.
+
+### 7b. Verify Rails phase
+
+Mark "Phase Xc — Rails X.Y: verify" as in progress.
+
+Print:
+```
+━━━ Phase Xc: verification ━━━
+```
+
+Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it. Additionally confirm Rails version is live:
+
+```bash
+bundle exec rails runner "puts Rails.version" 2>&1
+```
+
+Interpret the readiness tier against `BASELINE_FAILURES`. RED → Failure Protocol.
+
+Mark "Phase Xc" complete in TodoWrite.
+
+---
+
+## Step 8: Final Verification
+
+Mark "Final verification" as in progress.
+
+Print:
+```
+━━━ Final verification ━━━
+```
+
+Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it to produce the full health dashboard (test suite, deprecations, RuboCop, Zeitwerk, readiness tier).
+
+Upgrade additionally owns these cross-cutting infra checks that don't fit status's code-level scope:
+
+```bash
+# CI/CD files still referencing old Ruby
+grep -rn "ruby-${CURRENT_RUBY}" .github/ .circleci/ Jenkinsfile .gitlab-ci.yml 2>/dev/null | head -10
+
+# Dockerfiles still using old base image
+grep -rn "ruby:${CURRENT_RUBY}" Dockerfile* docker-compose* 2>/dev/null | head -10
+```
+
+Surface any matches in the Final Summary as manual steps.
+
+Mark "Final verification" complete in TodoWrite.
 
 ---
 
