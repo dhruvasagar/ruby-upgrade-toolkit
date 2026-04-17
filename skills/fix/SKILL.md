@@ -3,7 +3,7 @@ name: Upgrade Fix
 description: Use when the user runs /ruby-upgrade-toolkit:fix or asks to apply upgrade fixes, bump Ruby/Rails versions, fix deprecations, fix RSpec failures after upgrading, or fix RuboCop issues. Accepts ruby:X.Y.Z, optional rails:X.Y, and optional scope:path arguments. Applies all changes and iterates until RSpec and RuboCop are green.
 argument-hint: "ruby:X.Y.Z [rails:X.Y] [scope:path]"
 allowed-tools: Read, Edit, Bash, Glob, Grep
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Upgrade Fix
@@ -370,7 +370,97 @@ If RuboCop itself is outdated for the new Ruby:
 bundle update rubocop rubocop-rails rubocop-rspec rubocop-performance
 ```
 
-## Step 8: Produce Summary
+## Step 8: Verify Phase and Prompt for Commit
+
+Throughout Steps 2–7, keep a running record of what was changed:
+
+- `VERSION_PINS_CHANGED` — set of files modified (`.ruby-version`, `Gemfile`, `.tool-versions`)
+- `GEM_UPDATES` — list of `{gem, from, to}` entries from each `bundle update`
+- `RUBY_FIXES` — per-category counts (kwarg sites, YAML.load occurrences, `it` renames, stdlib additions)
+- `RAILS_FIXES` — per-pattern counts (update_attributes, before_filter, etc.) and list of config files touched
+- `LOAD_DEFAULTS_NEW` — target Rails minor written to `config/application.rb` (if applicable)
+
+### 8a. Run verification
+
+Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it to produce the readiness tier (GREEN / YELLOW / RED). Compare test-suite failures against `BASELINE_FAILURES` — only **new** failures count as regressions.
+
+### 8b. Decide by tier
+
+**RED** (new failures above baseline):
+
+Print the full RSpec failure output for each new failure, then exit:
+
+```
+⛔ Phase did not reach GREEN. New failures: [N] (baseline was [BASELINE]).
+   Not committing — inspect the failures above and rerun /ruby-upgrade-toolkit:fix
+   when ready, or investigate manually.
+```
+
+Do NOT prompt for commit. Do NOT create a commit. Exit.
+
+**GREEN** (tests pass at baseline, 0 new failures, 0 RuboCop offenses, 0 deprecations) or **YELLOW** (tests pass at baseline but warnings or offenses remain):
+
+Proceed to the commit prompt.
+
+### 8c. Build the proposed commit message
+
+Compose a message from the tracked changes:
+
+```
+chore(upgrade): ruby [TARGET_RUBY][ + rails TARGET_RAILS] phase
+
+Version pins:
+- .ruby-version: [OLD] → [TARGET_RUBY]
+- Gemfile ruby directive: "~> X.Y"
+- [.tool-versions: updated]   (only if changed)
+
+Gem updates:
+- [gem]: [from] → [to]
+- ...
+
+Ruby code changes:
+- Keyword argument fixes: [N] sites across [N] files
+- YAML.load → YAML.safe_load: [N] occurrences
+- [`it` variable renames: N]           (omit if 0)
+- [stdlib gems added: list]            (omit if none)
+
+Rails changes:                          (omit whole section if no rails: arg)
+- config.load_defaults: [OLD] → [NEW]
+- Deprecation fixes: [N] patterns, [N] occurrences
+- [Open-redirect decisions: N (option A/B/C per site)]
+- [Turbolinks → Turbo: migrated]
+
+Verification:
+- RSpec: [PASSING] examples, [F] failures ([BASELINE] pre-existing, 0 new)
+- RuboCop: [N] offenses
+- Deprecation warnings: [N]
+- Tier: [GREEN|YELLOW]
+```
+
+Omit any section whose tracked list is empty.
+
+### 8d. Prompt the user
+
+Print the proposed message exactly as it will be committed, then ask:
+
+```
+━━━ Phase verification: [GREEN|YELLOW] ━━━
+[message above]
+
+Commit this now? [yes / edit / no]
+```
+
+- **yes** — stage all tracked changes (`git add -A` scoped to files touched in Steps 2–5, never force) and run `git commit -m "$(cat <<'EOF'...EOF)"` with the message above.
+- **edit** — accept a revised message from the user, then commit with that text. Preserve the "chore(upgrade)" prefix unless the user deliberately overrides it.
+- **no** — skip the commit. Print: "Commit skipped — your working tree is dirty. Run `git commit -am '...'` when ready."
+
+Never use `--no-verify`, `--amend`, or `--force`. If a pre-commit hook fails, surface the error and return to the prompt (treat as an `edit` opportunity).
+
+### 8e. After committing
+
+Print a one-line confirmation with the short SHA, then produce the summary below.
+
+## Step 9: Produce Summary
 
 ```
 ## Upgrade Fix Summary
@@ -378,6 +468,7 @@ Date: [date]
 Ruby: [old] → [new]
 Rails: [old] → [new] (or "not upgraded")
 Scope: [full project / path/to/scope]
+Commit: [short SHA, or "skipped" if user chose no]
 
 ### Version Pins Updated
 - .ruby-version: [old] → [new]

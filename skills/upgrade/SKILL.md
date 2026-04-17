@@ -3,20 +3,22 @@ name: Upgrade Orchestrator
 description: Use when the user runs /ruby-upgrade-toolkit:upgrade or wants a fully automated Ruby/Rails upgrade pipeline. Orchestrates a phased upgrade by delegating per-phase execution to the fix skill and verification to the status skill. Keeps a live task list, pauses on RED verification, and lets the user continue, retry, or abort. Accepts ruby:X.Y.Z and optional rails:X.Y arguments.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
 allowed-tools: Read, Edit, Bash, Glob, Grep, TodoWrite
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Upgrade Orchestrator
 
 Run a fully automated, phased Ruby (and optionally Rails) upgrade from start to finish.
 
-**Architecture.** Upgrade is a pure orchestrator — it owns the task list, phase loop, banners, verification gate, failure protocol, and final summary. Per-phase *execution* is delegated:
+**Architecture.** Upgrade is a pure orchestrator. It owns the task list, the multi-phase loop, banners, per-phase activation, the Failure Protocol, and the final infra checklist (CI/CD, Dockerfiles). Everything else is delegated:
 
-- **`fix/SKILL.md`** is the source of truth for how to apply a phase (version pins, gem updates, code fixes, Rails migrations). Upgrade invokes fix per intermediate version with the right arguments and instructs it which step range to run.
-- **`status/SKILL.md`** is the source of truth for the verification gate. Upgrade runs status after each phase and interprets its readiness tier (GREEN / YELLOW / RED).
-- Shared reference data (Ruby↔Rails compatibility matrix, upgrade paths, verification-suite bash) lives in `skills/rails-upgrade-guide/references/` — upgrade loads it the same way the other skills do.
+- **`fix/SKILL.md`** owns the complete per-phase flow: apply changes → iterate to green → run verification → prompt the user for commit. Upgrade invokes fix per intermediate version with the appropriate arguments and lets it run end-to-end.
+- **`status/SKILL.md`** is loaded by fix during its verification step — upgrade does not run status directly for per-phase gating.
+- Shared reference data (Ruby↔Rails compatibility matrix, upgrade paths, verification-suite bash) lives in `skills/rails-upgrade-guide/references/`.
 
-This keeps every piece of logic in exactly one place. If a fix pattern changes, it changes in fix/SKILL.md and upgrade picks it up automatically.
+**Auto-advancement.** Once fix completes a phase with a successful commit (user approved at fix's commit prompt), upgrade moves to the next phase automatically — no separate "continue?" prompt between phases. The user's checkpoint is the per-phase commit confirmation inside fix. If the user declines the commit, upgrade pauses and asks whether to continue on a dirty tree or abort.
+
+This keeps every piece of logic in exactly one place. If a fix pattern or a commit-message format changes, it changes in fix/SKILL.md and upgrade picks it up automatically.
 
 Maintain a live task list so the user can see exactly what is done, what is in progress, and what is coming next. Pause and surface any failure clearly before asking whether to continue, retry, or abort.
 
@@ -66,39 +68,33 @@ Load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/upgrade-paths.md
 
 Using `TodoWrite`, create the **full concrete task list** before any work begins. Generate one task per sub-phase, substituting the real version numbers from the upgrade path computed in Step 3.
 
+Each Ruby phase has two sub-tasks: activate the Ruby binary, then delegate to fix (which applies, verifies, and commits). Each Rails phase has a single delegation task.
+
 **Example: Ruby 2.7 → 3.3, Rails 6.1 → 8.0 (generates this exact list):**
 
 ```
 Phase 0 — Prerequisites: test baseline + upgrade branch
-Phase 1a — Ruby 3.0.7: activate + version pins + gem updates
-Phase 1b — Ruby 3.0.7: code fixes (keyword args, YAML, stdlib)
-Phase 1c — Ruby 3.0.7: verify (RSpec + RuboCop + GREEN)
-Phase 2a — Ruby 3.1.6: activate + version pins + gem updates
-Phase 2b — Ruby 3.1.6: code fixes
-Phase 2c — Ruby 3.1.6: verify (RSpec + RuboCop + GREEN)
-Phase 3a — Ruby 3.2.4: activate + version pins + gem updates
-Phase 3b — Ruby 3.2.4: code fixes
-Phase 3c — Ruby 3.2.4: verify (RSpec + RuboCop + GREEN)
-Phase 4a — Ruby 3.3.1: activate + version pins + gem updates
-Phase 4b — Ruby 3.3.1: code fixes (it-parameter check)
-Phase 4c — Ruby 3.3.1: verify (RSpec + RuboCop + GREEN)
-Phase 5a — Rails 7.0: gem updates + bin/rails app:update
-Phase 5b — Rails 7.0: deprecation fixes + framework defaults
-Phase 5c — Rails 7.0: verify (RSpec + RuboCop + GREEN)
-Phase 6a — Rails 7.1: gem updates + bin/rails app:update
-Phase 6b — Rails 7.1: deprecation fixes + framework defaults
-Phase 6c — Rails 7.1: verify (RSpec + RuboCop + GREEN)
-Phase 7a — Rails 8.0: gem updates + bin/rails app:update
-Phase 7b — Rails 8.0: deprecation fixes + framework defaults
-Phase 7c — Rails 8.0: verify (RSpec + RuboCop + GREEN)
-Phase 8 — Final verification: full suite + deprecation count + manual checklist
+Phase 1a — Ruby 3.0.7: activate
+Phase 1b — Ruby 3.0.7: apply + verify + commit (via fix)
+Phase 2a — Ruby 3.1.6: activate
+Phase 2b — Ruby 3.1.6: apply + verify + commit (via fix)
+Phase 3a — Ruby 3.2.4: activate
+Phase 3b — Ruby 3.2.4: apply + verify + commit (via fix)
+Phase 4a — Ruby 3.3.1: activate
+Phase 4b — Ruby 3.3.1: apply + verify + commit (via fix)
+Phase 5 — Rails 7.0: apply + verify + commit (via fix)
+Phase 6 — Rails 7.1: apply + verify + commit (via fix)
+Phase 7 — Rails 8.0: apply + verify + commit (via fix)
+Phase 8 — Final verification: infra checks (CI/CD, Dockerfile) + manual checklist
 ```
 
 **Single-step examples:**
-- Ruby 3.2 → 3.3 only → phases 0, 1a/1b/1c, 2 (final)
-- Rails 7.0 → 8.0 only → phases 0, 1a/1b/1c (7.1), 2a/2b/2c (8.0), 3 (final)
+- Ruby 3.2 → 3.3 only → phases 0, 1a/1b, 2 (final)
+- Rails 7.0 → 8.0 only → phases 0, 1 (Rails 7.1), 2 (Rails 8.0), 3 (final)
 
-Omit Rails phases entirely if no `rails:` argument was given. Number phases sequentially based on the actual path — do not use placeholder letters like "X.Y".
+Omit Rails phases entirely if no `rails:` argument was given. Number phases sequentially based on the actual path.
+
+**Auto-advancement between phases:** once a phase's `fix` delegation returns successfully (commit made), upgrade proceeds to the next phase automatically — no "continue?" prompt between phases. The user's checkpoint is fix's per-phase commit confirmation, not a separate upgrade-level one. Only RED phases (verification failure inside fix) pause the loop — those route to upgrade's Failure Protocol.
 
 Print a summary banner before starting:
 
@@ -186,15 +182,15 @@ Mark "Phase 0" complete in TodoWrite. Print:
 
 ## Step 6: Ruby Phase Loop (repeat for each intermediate Ruby version)
 
-Per-phase *execution* is delegated to the `fix` skill. Upgrade orchestrates: activation confirmation, fix invocation with correct arguments, verification gate via `status`, and task-list updates.
+Per-phase *execution* is delegated to the `fix` skill — including verification and the commit prompt. Upgrade orchestrates: activation confirmation, fix invocation, task-list updates, and Failure Protocol on RED.
 
 ### 6a. Activate target Ruby
 
-Mark the current Ruby phase's "activate + version pins + gem updates" task as in progress.
+Mark the current Ruby phase's "activate" task as in progress.
 
 Print:
 ```
-━━━ Phase Xa: Ruby X.Y.Z — activating + fix delegation ━━━
+━━━ Phase Xa: Ruby X.Y.Z — activating ━━━
 ```
 
 Confirm the correct Ruby binary is active:
@@ -213,95 +209,61 @@ If the active Ruby is NOT this phase's target version, pause:
    Then reply "continue" to resume from here.
 ```
 
-Wait for "continue" before proceeding.
+Wait for "continue" before proceeding. Mark "Phase Xa" complete in TodoWrite.
 
 ### 6b. Execute the phase via fix
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute **Steps 1 through 4 only** with arguments `ruby:<this_phase_target_ruby>` (no `rails:` on Ruby phases). This applies:
-
-- Ruby version pins (fix Step 2)
-- Gem dependency resolution (fix Step 3)
-- Ruby version-specific code fixes (fix Step 4)
-
-**Stop at the end of fix Step 4.** Do NOT run fix Step 5 (Rails), Step 6 (iterative RSpec), Step 7 (iterative RuboCop), or Step 8 (summary) — upgrade owns its own verification gate and multi-phase summary.
-
-Surface notable actions from fix as they happen (gem updates, code fix counts, file-level test runs) so the user can follow progress.
-
-Mark "Phase Xa" and "Phase Xb" complete in TodoWrite once fix reports Steps 2–4 done.
-
-### 6c. Verify Ruby phase
-
-Mark "Phase Xc — Ruby X.Y.Z: verify" as in progress.
+Mark "Phase Xb — Ruby X.Y.Z: apply + verify + commit" as in progress.
 
 Print:
 ```
-━━━ Phase Xc: verification ━━━
+━━━ Phase Xb: Ruby X.Y.Z — fix delegation ━━━
 ```
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it. Interpret the readiness tier against this upgrade run's `BASELINE_FAILURES` (pre-existing failures count as baseline, not regressions).
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute its **full flow** (Steps 1 through 9) with arguments `ruby:<this_phase_target_ruby>` (no `rails:` on Ruby phases). Fix owns:
 
-Print the one-line result:
-```
-  Ruby: X.Y.Z ✓
-  RSpec: N examples, N failures (N pre-existing, 0 new) ✓
-  RuboCop: N offenses ✓
-  Status: GREEN ✓
-```
+- Version pins (Step 2)
+- Gem resolution (Step 3)
+- Ruby code fixes (Step 4)
+- Iterative RSpec + RuboCop green-up (Steps 6–7)
+- Verification + commit prompt (Step 8)
+- Summary (Step 9)
 
-Decision:
-- **GREEN** → mark phase complete, continue to the next intermediate Ruby (or advance to Rails phases / final verification).
-- **YELLOW** → log warnings to the final-summary buffer, continue to next phase.
-- **RED** → invoke Failure Protocol (bottom of this file).
+**When fix prompts the user for commit confirmation, that prompt is shown to the user** — this is the per-phase checkpoint. The user approves or edits the message; fix makes the commit.
 
-Mark "Phase Xc" complete in TodoWrite.
+Outcomes from fix:
+
+- **Fix committed successfully** → mark "Phase Xb" complete in TodoWrite. Auto-advance to the next phase (next intermediate Ruby, or Step 7 for Rails, or Step 8 for final verification) **without asking the user**.
+- **User chose "no" at fix's commit prompt** → working tree is dirty and uncommitted. Pause and print:
+  ```
+  Phase Xb completed verification but commit was declined.
+  Reply "continue" to advance to the next phase (your working tree is dirty),
+  or "abort" to stop the upgrade.
+  ```
+- **Fix exited RED** (Step 8 verification failed) → invoke Failure Protocol. Fix did not commit; the working tree holds the problematic changes for the user to inspect.
 
 ---
 
 ## Step 7: Rails Phase Loop (skip entirely if no `rails:` argument)
 
-Per-phase *execution* is delegated to the `fix` skill. For each intermediate Rails version:
+Per-phase execution is delegated to the `fix` skill — including verification and commit. For each intermediate Rails version:
 
-### 7a. Execute the phase via fix
-
-Mark the current Rails phase's "gem updates + app:update" task as in progress.
+Mark the current Rails phase's "apply + verify + commit" task as in progress.
 
 Print:
 ```
-━━━ Phase Xa: Rails X.Y — fix delegation ━━━
+━━━ Phase X: Rails X.Y — fix delegation ━━━
 ```
 
-Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute **Steps 5a through 5f only** with arguments `ruby:<final_ruby> rails:<this_phase_target_rails>`. Fix's earlier steps (2–4) will fast-exit because Ruby is already at target. The Rails-side steps apply:
+Load `$CLAUDE_PLUGIN_ROOT/skills/fix/SKILL.md` and execute its **full flow** (Steps 1 through 9) with arguments `ruby:<final_ruby> rails:<this_phase_target_rails>`. Fix's Steps 2–4 fast-exit because Ruby is already at target; Steps 5a–5f apply the Rails-side changes; Steps 6–9 verify, prompt for commit, and summarise.
 
-- Rails gem update + `bin/rails app:update` (fix Steps 5a–5b)
-- Framework defaults (fix Step 5c)
-- Deprecation fixes (fix Step 5d — includes the pause-for-user flow for open redirects and HABTM)
-- Turbolinks → Turbo migration if upgrading to Rails 7+ (fix Step 5e)
-- RuboCop target version bump (fix Step 5f)
+User-input pauses inside fix (open redirect option A/B/C, HABTM migration confirmation, commit prompt) run within fix's flow. Upgrade's Failure Protocol only triggers when fix exits RED from its Step 8 verification.
 
-**Stop at the end of fix Step 5f.** Do NOT run fix Steps 6–8.
+Outcomes:
 
-Any user-input pauses inside fix (open redirect option A/B/C, HABTM migration confirmation) run within fix's flow — upgrade's Failure Protocol is separate and only triggers on phase verification RED.
-
-Mark "Phase Xa" and "Phase Xb" complete in TodoWrite once fix reports Step 5 done.
-
-### 7b. Verify Rails phase
-
-Mark "Phase Xc — Rails X.Y: verify" as in progress.
-
-Print:
-```
-━━━ Phase Xc: verification ━━━
-```
-
-Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it. Additionally confirm Rails version is live:
-
-```bash
-bundle exec rails runner "puts Rails.version" 2>&1
-```
-
-Interpret the readiness tier against `BASELINE_FAILURES`. RED → Failure Protocol.
-
-Mark "Phase Xc" complete in TodoWrite.
+- **Fix committed** → mark phase complete. Auto-advance to next Rails phase or Step 8 — no "continue?" prompt.
+- **User declined commit at fix prompt** → pause and ask: `continue` (dirty tree) or `abort`.
+- **RED verification** → Failure Protocol.
 
 ---
 
