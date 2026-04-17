@@ -42,8 +42,8 @@ One command runs everything: detects versions, validates compatibility, computes
 **Why the order matters:**
 - `audit` is read-only — zero risk, surfaces breaking changes and effort before touching anything
 - `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order — and quantifies each phase (effort, risk, blast radius, confidence) so you can catch oversized work before committing to it
-- `fix` applies one phase at a time — version pins, gem updates, code fixes, then iterative RSpec and RuboCop until green
-- `status` is your gate — RED means stop and diagnose, do not proceed to the next phase
+- `fix` applies one phase at a time — version pins, gem updates, code fixes, iterative RSpec and RuboCop until green, then a verification + commit prompt so each phase lands as its own reviewable checkpoint
+- `status` is an on-demand dashboard — useful for a full health snapshot, though `fix`'s built-in verification is what gates the commit
 
 ## Installation
 
@@ -110,7 +110,7 @@ All commands are namespaced under `/ruby-upgrade-toolkit:` to avoid conflicts wi
 
 ### `/ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]`
 
-**The recommended starting point.** Runs the full upgrade pipeline automatically with a live task list.
+**The recommended starting point.** Runs the full upgrade pipeline automatically with a live task list and per-phase commit checkpoints.
 
 What it does:
 1. Detects current versions, validates Ruby ↔ Rails compatibility
@@ -118,10 +118,10 @@ What it does:
 3. Creates a `TodoWrite` task list for every sub-phase before starting
 4. Checks all intermediate Ruby versions are installed (stops early if not)
 5. Confirms a baseline: test failures and RuboCop offenses before any changes
-6. Executes each phase: activate Ruby → version pins → gem updates → code fixes → verify
+6. For each phase: activates the target Ruby (Ruby phases), then delegates to `fix` which applies pins/gems/code fixes, iterates to green, verifies, and **prompts for a git commit with a detailed message** — the per-phase checkpoint
 7. Rails phases follow after all Ruby phases are complete
-8. Prints a banner and ticks off tasks as each phase completes
-9. On failure: pauses with full error output and three options — investigate+continue, retry the phase, or abort (no rollback)
+8. Auto-advances between phases once the commit lands — no "continue?" prompt
+9. On verification failure: pauses with full error output and three options — investigate+continue, retry the phase, or abort (no rollback; working tree holds the problematic changes)
 
 ```bash
 # Automated Ruby-only upgrade
@@ -173,6 +173,16 @@ Apply all upgrade changes. The primary execution command.
 
 Applies: `.ruby-version` and `Gemfile` pin updates, gem dependency updates, Ruby version-specific code fixes, Rails deprecation fixes (if `rails:` given), Rails config updates (if `rails:` given), iterative RSpec until green, iterative RuboCop until clean.
 
+When the phase reaches GREEN (or YELLOW — tests pass, warnings remain), `fix` builds a detailed proposed commit message that itemises what changed (version pins, gem diffs, fix counts, verification results) and prompts you to `yes / edit / no`:
+
+- **yes** — stages the tracked files and commits with the proposed message
+- **edit** — you revise the message first, then it commits
+- **no** — skips the commit; your working tree is left dirty for you to handle manually
+
+On RED (new failures above baseline), `fix` exits without prompting and without committing — you inspect the failures and rerun.
+
+The same prompt runs whether you call `/fix` directly or it's driven by `/upgrade`. When orchestrated by `/upgrade`, the post-commit auto-advance to the next phase is what differs; the commit confirmation itself is always shown.
+
 Flags CI/CD pipeline files and Dockerfiles for manual update — never modifies them automatically.
 
 ```bash
@@ -193,9 +203,9 @@ Flags CI/CD pipeline files and Dockerfiles for manual update — never modifies 
 
 Current upgrade health dashboard. No arguments.
 
-Reports: current vs. target versions, test suite pass/fail, deprecation warning count, Ruby warning count, RuboCop offense count, and overall RED/YELLOW/GREEN readiness.
+Reports: current vs. target versions, test suite pass/fail, deprecation warning count, Ruby warning count, RuboCop offense count, Zeitwerk status (Rails), and overall RED/YELLOW/GREEN readiness.
 
-Run this after each `fix` phase. Do not proceed to the next phase if the report shows RED.
+`fix` runs this internally before prompting for its per-phase commit, so the same tier is already gating the commit. Call `/status` directly when you want an on-demand snapshot outside the fix flow — e.g., to check health mid-session or after a manual edit.
 
 ```bash
 /ruby-upgrade-toolkit:status
@@ -205,7 +215,7 @@ Run this after each `fix` phase. Do not proceed to the next phase if the report 
 
 Four complete walkthroughs below. Scenario 0 uses the automated `upgrade` command — the fastest path. Scenarios 1–3 use the manual `audit → plan → fix → status` loop for full control.
 
-> **Rule of thumb:** Never skip a `status` check after a fix phase. RED means stop and diagnose — do not proceed to the next phase.
+> **Rule of thumb:** `fix` runs verification and prompts for a commit before the phase "completes" — so the commit itself is the checkpoint. Only decline or hit RED if something actually looks wrong. You can still run `/status` any time for a full on-demand dashboard.
 
 ---
 
@@ -238,25 +248,30 @@ Path:  Ruby: 3.1 → 3.2 → 3.3 | Rails: 7.0 → 7.1 → 7.2
 Task list created. Starting Phase 0.
 
 ☑ Phase 0  — Prerequisites: test baseline + upgrade branch
-☐ Phase 1a — Ruby 3.2.4: activate + version pins + gem updates
-☐ Phase 1b — Ruby 3.2.4: code fixes
-☐ Phase 1c — Ruby 3.2.4: verify (RSpec + RuboCop + GREEN)
-☐ Phase 2a — Ruby 3.3.1: activate + version pins + gem updates
-☐ Phase 2b — Ruby 3.3.1: code fixes (it-parameter check)
-☐ Phase 2c — Ruby 3.3.1: verify (RSpec + RuboCop + GREEN)
-☐ Phase 3a — Rails 7.1: gem updates + bin/rails app:update
-☐ Phase 3b — Rails 7.1: deprecation fixes + framework defaults
-☐ Phase 3c — Rails 7.1: verify (RSpec + RuboCop + GREEN)
-☐ Phase 4a — Rails 7.2: gem updates + bin/rails app:update
-☐ Phase 4b — Rails 7.2: deprecation fixes + framework defaults
-☐ Phase 4c — Rails 7.2: verify (RSpec + RuboCop + GREEN)
-☐ Phase 5  — Final verification: full suite + deprecation count + manual checklist
+☐ Phase 1a — Ruby 3.2.4: activate
+☐ Phase 1b — Ruby 3.2.4: apply + verify + commit (via fix)
+☐ Phase 2a — Ruby 3.3.1: activate
+☐ Phase 2b — Ruby 3.3.1: apply + verify + commit (via fix)
+☐ Phase 3  — Rails 7.1: apply + verify + commit (via fix)
+☐ Phase 4  — Rails 7.2: apply + verify + commit (via fix)
+☐ Phase 5  — Final verification: infra checks (CI/CD, Dockerfile)
 ```
 
-As each phase completes, its task is ticked off. If a phase fails verification, the upgrade pauses:
+As each phase completes, its task is ticked off. Each phase ends with fix's commit prompt:
 
 ```
-⛔ UPGRADE PAUSED — Phase 1c: Ruby 3.2.4 verify did not pass verification
+━━━ Phase verification: GREEN ━━━
+chore(upgrade): ruby 3.2.4 phase
+...
+Commit this now? [yes / edit / no]
+```
+
+Answer `yes` (or `edit` then provide your own message) and the phase's changes land as a reviewable commit. Upgrade immediately moves to the next phase — no separate "continue?" prompt.
+
+If a phase fails verification, the upgrade pauses (no commit is made):
+
+```
+⛔ UPGRADE PAUSED — Phase 1b: Ruby 3.2.4 did not pass verification
 
 Failures introduced by this phase: 2 (above the 0 pre-existing baseline)
 
@@ -267,13 +282,13 @@ Failures introduced by this phase: 2 (above the 0 pre-existing baseline)
 ━━━ What you can do ━━━
 
   A) Investigate and fix — resolve the failures yourself, then reply "continue"
-  B) Retry this phase   — reply "retry phase 1c" to re-run phase 1c's fixes
-  C) Abort              — reply "abort" to stop here (changes preserved)
+  B) Retry this phase   — reply "retry phase 1b" to re-run phase 1b's fixes
+  C) Abort              — reply "abort" to stop here (working tree preserved)
 
 Waiting for your decision...
 ```
 
-Fix the issue in `app/serializers/user_serializer.rb`, then reply `continue`. Claude re-runs verification and proceeds automatically if green.
+Fix the issue in `app/serializers/user_serializer.rb`, then reply `continue`. Claude re-runs verification and proceeds automatically if green — surfacing the commit prompt for your approval before moving on.
 
 ---
 
@@ -395,12 +410,36 @@ Claude applies changes in this order:
 4. Replaces `YAML.load` with `YAML.safe_load` in 3 files
 5. Runs full RSpec suite — iterates on any failures until green
 6. Runs RuboCop (`-a` then `-A`) — iterates on remaining offenses until clean
-7. Produces a fix summary
+7. Runs verification (status) and, on GREEN/YELLOW, **prompts you to commit** with a detailed message:
+
+```
+━━━ Phase verification: GREEN ━━━
+chore(upgrade): ruby 3.0.7 phase
+
+Version pins:
+- .ruby-version: 2.7.8 → 3.0.7
+- Gemfile ruby directive: "~> 3.0"
+
+Ruby code changes:
+- Keyword argument fixes: 34 sites across 12 files
+- YAML.load → YAML.safe_load: 3 occurrences
+
+Verification:
+- RSpec: 312 examples, 0 failures (0 pre-existing, 0 new)
+- RuboCop: 0 offenses
+- Deprecation warnings: 0
+- Tier: GREEN
+
+Commit this now? [yes / edit / no]
+```
+
+8. On `yes`, creates the commit. On `edit`, lets you revise the message first. On `no`, leaves the working tree dirty. Then produces a fix summary.
 
 ```
 ## Upgrade Fix Summary
 Ruby: 2.7.8 → 3.0.7
 Scope: full project
+Commit: abc1234
 
 ### Ruby Code Changes
 - Keyword argument fixes: 12 files, 34 occurrences
@@ -417,6 +456,8 @@ Scope: full project
 ```
 
 #### Checkpoint after Phase 1
+
+The per-phase commit is the primary checkpoint, but `status` is still useful as a full dashboard (Zeitwerk, outdated gems, etc.):
 
 ```
 /ruby-upgrade-toolkit:status
