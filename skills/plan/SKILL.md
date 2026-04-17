@@ -3,7 +3,7 @@ name: Upgrade Plan
 description: Use when the user runs /ruby-upgrade-toolkit:plan or asks to plan a Ruby or Rails upgrade, generate an upgrade roadmap, or understand what phases are involved in bumping versions. Accepts ruby:X.Y.Z and optional rails:X.Y arguments. Produces a phased, project-specific upgrade plan with checklists.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
 allowed-tools: Read, Bash, Glob, Grep
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Upgrade Plan
@@ -80,7 +80,53 @@ RUBYOPT="-W:deprecated" bundle exec ruby -e "puts 'ok'" 2>&1 | head -5
 
 For Rails upgrades, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/SKILL.md` and its relevant version reference file to identify breaking changes that apply.
 
-## Step 5: Generate the Plan
+## Step 5: Compute Estimates
+
+Estimates are derived from the counts collected in Step 4 — never invent numbers. If a count can't be obtained, record it as `unknown` and downgrade confidence.
+
+### Effort (minutes → rolled up to hours)
+
+Apply this rubric to the grep/scan results:
+
+| Signal | Minutes each |
+|--------|--------------|
+| Keyword-argument call site (`def .*\*\*`) | 2 |
+| `YAML.load` occurrence | 2 |
+| Deprecated API match (per pattern from rails-upgrade-guide) | 5 |
+| Framework default to toggle | 15 |
+| `rails app:update` config diff file | 10 |
+| Gem minor/patch bump | 10 |
+| Gem major-version bump | 30 |
+| Gem with native extension **and** no target-compatible version published | 120 |
+| Each intermediate Ruby or Rails hop | +60 (overhead per hop) |
+
+Round each phase total up to the nearest half-hour. Always show the formula (`12 × 2min + 3 × 30min = 114min ≈ 2h`) so the user can sanity-check.
+
+### Risk (LOW / MED / HIGH)
+
+Start at LOW, then apply bumps. HIGH is a cap.
+
+- Baseline suite failing → set HIGH (stop; do not bump further)
+- No test suite detected → set HIGH
+- `>1` intermediate Ruby hop → bump one level
+- `>1` intermediate Rails hop → bump one level
+- Any native-extension gem lacking a target-compatible version → bump one level
+- Monkey patches present in `config/initializers/` (grep `class .* < ` and `Module.prepend`) → bump one level
+
+### Blast radius
+
+Report concrete counts only — no ranges, no guesses:
+- `N files, M call sites` for each scanned pattern
+- `K gems` flagged by `bundle outdated`
+- `L config files` expected to diff from `rails app:update` (Rails phase only)
+
+### Confidence (LOW / MED / HIGH)
+
+- HIGH — every input count was obtained automatically **and** baseline suite is green
+- MED — some counts obtained but suite wasn't runnable, or one scan returned `unknown`
+- LOW — suite not runnable **and** two or more counts are `unknown`
+
+## Step 6: Generate the Plan
 
 Output a Markdown-formatted plan with the following structure. Fill in specifics based on what was found in Steps 1–4.
 
@@ -95,6 +141,17 @@ Generated: [date]
 App: [name from config/application.rb or directory name]
 ```
 
+### Estimate Summary
+
+| Phase | Effort | Risk | Blast radius | Confidence |
+|-------|--------|------|--------------|------------|
+| Phase 1: Ruby  | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | LOW/MED/HIGH |
+| Phase 2: Rails | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | LOW/MED/HIGH |
+| Phase 3: Verify | ~Xh  | LOW          | —                        | HIGH         |
+| **Total**      | **~Xh** | **worst of above** | — | **lowest of above** |
+
+Below the table, list the exact formulas used (e.g. `Phase 1 = 12 kwarg × 2min + 2 gems × 30min + 1 hop × 60min = 144min ≈ 2.5h`) so the user can audit or override.
+
 ### Phase 0: Prerequisites
 
 - [ ] All current tests passing (`bundle exec rspec` or `bundle exec rails test`)
@@ -103,6 +160,8 @@ App: [name from config/application.rb or directory name]
 - [ ] CI pipeline configured to run on the upgrade branch
 
 ### Phase 1: Ruby Upgrade — [CURRENT_RUBY] → [TARGET_RUBY]
+
+**Effort:** ~Xh · **Risk:** LOW/MED/HIGH · **Blast radius:** N files, M sites, K gems · **Confidence:** LOW/MED/HIGH
 
 Repeat this phase for each intermediate Ruby version if multi-step.
 
@@ -140,6 +199,8 @@ Based on the target Ruby version, list the code fixes required:
 ### Phase 2: Rails Upgrade — [CURRENT_RAILS] → [TARGET_RAILS]
 *(Omit entirely if no `rails:` argument was given)*
 
+**Effort:** ~Xh · **Risk:** LOW/MED/HIGH · **Blast radius:** N files, K gems, L config diffs · **Confidence:** LOW/MED/HIGH
+
 Repeat for each intermediate Rails version if multi-step.
 
 #### 2a. Gem Updates for Rails Compatibility
@@ -169,6 +230,8 @@ Based on the Rails version pair, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-
 - [ ] Run `/ruby-upgrade-toolkit:status` — must show GREEN
 
 ### Phase 3: Final Verification
+
+**Effort:** ~1h · **Risk:** LOW · **Confidence:** HIGH
 
 - [ ] Full test suite green
 - [ ] Zero deprecation warnings: `RAILS_ENV=test bundle exec rspec 2>&1 | grep -c DEPRECATION || echo 0`

@@ -24,7 +24,7 @@ One command runs everything: detects versions, validates compatibility, computes
 /ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y] # execute the plan
 ```
 
-`audit` surfaces breaking changes and gives an effort estimate before touching any code. `plan` shows exactly which phases will run and in what order. Once you're comfortable with the plan, `upgrade` executes the same sequence automatically — no need to re-specify anything.
+`audit` surfaces breaking changes and gives an effort estimate before touching any code. `plan` shows exactly which phases will run, in what order, and — in its Estimate Summary — the effort, risk, blast radius, and confidence for each phase so you can sanity-check scope and sequencing. Once you're comfortable with the plan, `upgrade` executes the same sequence automatically — no need to re-specify anything.
 
 **Use this when** you're doing a major version jump, have a large codebase, or want to understand the scope before committing to execution.
 
@@ -41,7 +41,7 @@ One command runs everything: detects versions, validates compatibility, computes
 
 **Why the order matters:**
 - `audit` is read-only — zero risk, surfaces breaking changes and effort before touching anything
-- `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order
+- `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order — and quantifies each phase (effort, risk, blast radius, confidence) so you can catch oversized work before committing to it
 - `fix` applies one phase at a time — version pins, gem updates, code fixes, then iterative RSpec and RuboCop until green
 - `status` is your gate — RED means stop and diagnose, do not proceed to the next phase
 
@@ -156,6 +156,8 @@ Surfaces: Ruby breaking changes for the target version, Rails deprecations (if R
 Generate a phased, project-specific upgrade roadmap. Detects current versions automatically.
 
 Produces a Markdown plan with: prerequisites, Ruby upgrade phases (one per intermediate version), Rails upgrade phases (if `rails:` given), and a final verification checklist. Each phase ends with RSpec green + RuboCop clean.
+
+Every plan leads with an **Estimate Summary** — per-phase effort (hours), risk (LOW/MED/HIGH), blast radius (files, call sites, gems touched), and confidence level. Numbers are derived from concrete grep counts and `bundle outdated` results, never guessed; each total ships with the formula so you can audit or override it.
 
 ```bash
 # Ruby-only plan
@@ -326,6 +328,19 @@ Claude generates a phased roadmap specific to your project. It sequences interme
 ```
 ## Upgrade Roadmap: Ruby 2.7.8 → 3.3.1
 
+### Estimate Summary
+| Phase             | Effort | Risk | Blast radius           | Confidence |
+|-------------------|--------|------|------------------------|------------|
+| Phase 1: 2.7→3.0  | ~2.5h  | MED  | 37 sites, 3 files      | HIGH       |
+| Phase 2: 3.0→3.1  | ~1h    | LOW  | 0 sites                | HIGH       |
+| Phase 3: 3.1→3.2  | ~1h    | LOW  | 0 sites                | HIGH       |
+| Phase 4: 3.2→3.3  | ~1h    | LOW  | 0 sites                | HIGH       |
+| **Total**         | **~5.5h** | **MED** | 37 sites, 3 files | **HIGH**   |
+
+Formulas:
+- Phase 1 = 34 kwarg × 2min + 3 YAML × 2min + 1 hop × 60min = 134min ≈ 2.5h
+- Phases 2–4 = 1 hop × 60min each = 1h each
+
 ### Prerequisites
 - [ ] Install Ruby 3.0.7: rbenv install 3.0.7
 - [ ] Install Ruby 3.1.6: rbenv install 3.1.6
@@ -334,6 +349,7 @@ Claude generates a phased roadmap specific to your project. It sequences interme
 - [ ] Fix 0 pre-existing test failures (baseline is green — good)
 
 ### Phase 1: Ruby 2.7 → 3.0 (highest risk)
+**Effort:** ~2.5h · **Risk:** MED · **Blast radius:** 37 sites, 3 files · **Confidence:** HIGH
 - Fix keyword argument mismatches (34 sites)
 - Fix YAML.load → YAML.safe_load (3 files)
 - Update .ruby-version and Gemfile ruby pin
@@ -342,17 +358,20 @@ Claude generates a phased roadmap specific to your project. It sequences interme
 - Checkpoint: /ruby-upgrade-toolkit:status → GREEN required
 
 ### Phase 2: Ruby 3.0 → 3.1
+**Effort:** ~1h · **Risk:** LOW · **Confidence:** HIGH
 - Update .ruby-version and Gemfile ruby pin
 - Address any Psych 4 YAML changes
 - Run RSpec until green, RuboCop until clean
 - Checkpoint: GREEN required
 
 ### Phase 3: Ruby 3.1 → 3.2
+**Effort:** ~1h · **Risk:** LOW · **Confidence:** HIGH
 - Update .ruby-version and Gemfile ruby pin
 - Run RSpec until green, RuboCop until clean
 - Checkpoint: GREEN required
 
 ### Phase 4: Ruby 3.2 → 3.3.1
+**Effort:** ~1h · **Risk:** LOW · **Confidence:** HIGH
 - Update .ruby-version and Gemfile ruby pin
 - Check for `it` block parameter conflicts
 - Run RSpec until green, RuboCop until clean
@@ -510,19 +529,43 @@ The plan sequences Ruby phases first, Rails phases second:
 ```
 ## Upgrade Roadmap: Ruby 2.7→3.3, Rails 6.1→8.0
 
+### Estimate Summary
+| Phase                 | Effort | Risk | Blast radius                 | Confidence |
+|-----------------------|--------|------|------------------------------|------------|
+| Ruby Phase 1: 2.7→3.0 | ~3h    | MED  | 41 sites, 5 files, 1 gem     | HIGH       |
+| Ruby Phase 2: 3.0→3.1 | ~1h    | LOW  | 0 sites                      | HIGH       |
+| Ruby Phase 3: 3.1→3.2 | ~1h    | LOW  | 0 sites                      | HIGH       |
+| Ruby Phase 4: 3.2→3.3 | ~1h    | LOW  | 0 sites                      | HIGH       |
+| Rails Phase 1: 6.1→7.0| ~4h    | HIGH | ~21 sites, 12 files, 2 gems  | MED        |
+| Rails Phase 2: 7.0→7.1| ~2h    | MED  | ~8 sites, 4 files            | MED        |
+| Rails Phase 3: 7.1→8.0| ~2.5h  | MED  | ~6 sites, 6 files, 1 gem     | MED        |
+| Phase 3: Verification | ~1h    | LOW  | —                            | HIGH       |
+| **Total**             | **~15.5h** | **HIGH** | ~76 sites, 27 files, 3 gems | **MED** |
+
+Formulas:
+- Ruby 2.7→3.0 = 41 kwarg × 2min + 1 gem × 30min + 1 hop × 60min = 172min ≈ 3h
+- Rails 6.1→7.0 = 21 deprecations × 5min + 12 config × 10min + 2 gems × 30min + 1 hop × 60min = 345min ≈ 4h
+- Rails 7.1→8.0 = 6 deprecations × 5min + 6 config × 10min + 1 gem × 30min + 1 hop × 60min = 180min ≈ 2.5h
+- Risk escalated to HIGH because Rails hops > 1 and `devise` gem pin required native-ext spike
+
 ### Prerequisites
 - [ ] Install Ruby 3.0.7, 3.1.6, 3.2.4, 3.3.1
 
 ### Ruby Phase 1: 2.7 → 3.0  (keyword args, YAML)
+**Effort:** ~3h · **Risk:** MED · **Blast radius:** 41 sites, 5 files, 1 gem · **Confidence:** HIGH
+
 ### Ruby Phase 2: 3.0 → 3.1
 ### Ruby Phase 3: 3.1 → 3.2
 ### Ruby Phase 4: 3.2 → 3.3  ← Ruby upgrade complete here
 
 ### Rails Phase 1: 6.1 → 7.0  (enum syntax, Zeitwerk, filter→action)
+**Effort:** ~4h · **Risk:** HIGH · **Blast radius:** 21 sites, 12 files, 2 gems · **Confidence:** MED
+
 ### Rails Phase 2: 7.0 → 7.1  (load_defaults, encryption)
 ### Rails Phase 3: 7.1 → 8.0  (config updates, gem updates)
 
 ### Final Verification
+**Effort:** ~1h · **Risk:** LOW · **Confidence:** HIGH
 - [ ] Full RSpec suite green
 - [ ] 0 deprecation warnings
 - [ ] 0 RuboCop offenses
@@ -667,10 +710,23 @@ Overall: Low–Medium
 ```
 ## Upgrade Roadmap: Rails 7.0 → 8.0 (Ruby unchanged at 3.2.4)
 
+### Estimate Summary
+| Phase                 | Effort | Risk | Blast radius              | Confidence |
+|-----------------------|--------|------|---------------------------|------------|
+| Rails Phase 1: 7.0→7.1| ~2h    | LOW  | 5 sites, 4 files          | HIGH       |
+| Rails Phase 2: 7.1→8.0| ~2h    | MED  | 4 sites, 3 files, 1 gem   | HIGH       |
+| Phase 3: Verification | ~1h    | LOW  | —                         | HIGH       |
+| **Total**             | **~5h** | **MED** | 9 sites, 7 files, 1 gem | **HIGH** |
+
+Formulas:
+- Rails 7.0→7.1 = 5 deprecations × 5min + 4 config × 10min + 1 hop × 60min = 125min ≈ 2h
+- Rails 7.1→8.0 = 4 deprecations × 5min + 3 config × 10min + 1 gem × 30min + 1 hop × 60min = 140min ≈ 2h
+
 ### Prerequisites
 - [ ] Baseline: 0 test failures
 
 ### Rails Phase 1: 7.0 → 7.1
+**Effort:** ~2h · **Risk:** LOW · **Blast radius:** 5 sites, 4 files · **Confidence:** HIGH
 - Update rails gem pin
 - Run bin/rails app:update, review diffs
 - Set config.load_defaults 7.1
@@ -679,6 +735,7 @@ Overall: Low–Medium
 - Checkpoint: status GREEN required
 
 ### Rails Phase 2: 7.1 → 8.0
+**Effort:** ~2h · **Risk:** MED · **Blast radius:** 4 sites, 3 files, 1 gem · **Confidence:** HIGH
 - Update rails gem pin
 - Run bin/rails app:update, review diffs
 - Set config.load_defaults 8.0
