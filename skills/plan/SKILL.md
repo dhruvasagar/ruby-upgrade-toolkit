@@ -1,9 +1,9 @@
 ---
 name: Upgrade Plan
-description: Use when the user runs /ruby-upgrade-toolkit:plan or asks to plan a Ruby or Rails upgrade, generate an upgrade roadmap, or understand what phases are involved in bumping versions. Accepts ruby:X.Y.Z and optional rails:X.Y arguments. Produces a phased, project-specific upgrade plan with checklists.
+description: Use when the user runs /ruby-upgrade-toolkit:plan or asks to plan a Ruby or Rails upgrade, generate an upgrade roadmap, or understand what phases are involved in bumping versions. Accepts ruby:X.Y.Z and optional rails:X.Y arguments. Produces a phased, project-specific upgrade plan with estimates AND creates a TodoWrite task list that /fix next and /upgrade consume.
 argument-hint: "ruby:X.Y.Z [rails:X.Y]"
-allowed-tools: Read, Bash, Glob, Grep
-version: 0.3.0
+allowed-tools: Read, Bash, Glob, Grep, TodoWrite
+version: 0.4.0
 ---
 
 # Upgrade Plan
@@ -215,6 +215,63 @@ Based on the Rails version pair, load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-
 - [ ] Update Dockerfile Ruby base image — **manual step, list file paths**
 
 ---
+
+## Step 7: Create the Task List
+
+After printing the plan, use `TodoWrite` to create a structured task list that `/fix next` and `/upgrade` will consume. **Every task subject must follow a parseable format** — fix uses regex matching on the subject to recover the target version.
+
+### Subject format (strict)
+
+Ruby phase — one task per intermediate Ruby minor:
+```
+Phase <N> — Ruby <X.Y.Z>: apply + verify + commit
+```
+
+Rails phase — one task per intermediate Rails minor:
+```
+Phase <N> — Rails <X.Y>: apply + verify + commit
+```
+
+Final verification — exactly one, always last:
+```
+Final — Infra checks (CI/CD, Dockerfile) + checklist
+```
+
+`<N>` is a sequential integer across the entire list (Ruby phases come first, Rails phases after, Final last). Use the exact patch version for Ruby (e.g. `3.0.7`, not `3.0`) and the minor for Rails (e.g. `7.1`, not `7.1.0`).
+
+### Rules
+
+1. **Overwrite an existing list.** If a task list from a previous `/plan` run exists, delete its pending tasks before creating the new ones. Completed tasks that correspond to work already finished (as evidenced by current repo state — `.ruby-version`, `Gemfile.lock`) can be re-created with status already set to completed, or dropped entirely. If you can't tell, prefer to drop and re-create fresh.
+
+2. **One task per phase, no sub-tasks.** Do not emit separate "activate" or "verify" sub-tasks — fix owns its own internal phase structure (gem resolution, code fixes, iterative green-up, verification, commit) and the one `apply + verify + commit` task represents all of it.
+
+3. **Skip phases whose target equals current version.** If current Ruby is already at target and no Ruby phases are needed, emit only Rails tasks (if given). If both are at target, print "Already at target — no task list created" and exit.
+
+4. **Always include Final.** Even if only one apply phase is needed, include the `Final — Infra checks` task so upgrade's post-loop step has a task to tick off.
+
+### Example
+
+For Ruby 2.7 → 3.3, Rails 6.1 → 8.0:
+
+```
+Phase 1 — Ruby 3.0.7: apply + verify + commit
+Phase 2 — Ruby 3.1.6: apply + verify + commit
+Phase 3 — Ruby 3.2.4: apply + verify + commit
+Phase 4 — Ruby 3.3.1: apply + verify + commit
+Phase 5 — Rails 7.0: apply + verify + commit
+Phase 6 — Rails 7.1: apply + verify + commit
+Phase 7 — Rails 8.0: apply + verify + commit
+Final — Infra checks (CI/CD, Dockerfile) + checklist
+```
+
+For Ruby 3.2 → 3.3 only:
+
+```
+Phase 1 — Ruby 3.3.1: apply + verify + commit
+Final — Infra checks (CI/CD, Dockerfile) + checklist
+```
+
+After creating the list, print a one-line confirmation: `✓ Task list created (N tasks). Run /fix next to start, or /upgrade to automate the full pipeline.`
 
 ## Output
 

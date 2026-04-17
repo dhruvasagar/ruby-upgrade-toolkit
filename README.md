@@ -32,17 +32,20 @@ One command runs everything: detects versions, validates compatibility, computes
 
 ```
 /ruby-upgrade-toolkit:audit ruby:X.Y.Z [rails:X.Y]   # read-only scan
-/ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y]    # phased roadmap
-/ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y]     # apply one phase at a time
-/ruby-upgrade-toolkit:status                          # verify before proceeding
+/ruby-upgrade-toolkit:plan  ruby:X.Y.Z [rails:X.Y]   # roadmap + creates a task list
+/ruby-upgrade-toolkit:fix   next                     # apply next pending phase; repeat
 ```
+
+`plan` creates a TodoWrite task list (one task per phase); `fix next` reads the list, picks the first pending task, applies it, verifies, prompts you for commit, and ticks it off. Iterate `fix next` until the list is empty. You can also pass explicit args to `fix` to jump to a specific phase — useful when resuming or working out of order.
 
 **Use this when** you want to inspect and approve changes phase by phase, apply fixes to a specific scope (`scope:path`), or resume a partially completed upgrade.
 
+**Manual and automated share the same machinery.** `/upgrade` is literally `/plan` + a loop that invokes `/fix next` until the list is empty, plus some pre-loop prerequisite checks (branch, Ruby installs) and a post-loop Final infra check (CI/CD, Dockerfiles). The per-phase work is byte-identical.
+
 **Why the order matters:**
 - `audit` is read-only — zero risk, surfaces breaking changes and effort before touching anything
-- `plan` sequences work correctly — Ruby phases before Rails phases, intermediate versions in the right order — and quantifies each phase (effort, risk, blast radius, confidence) so you can catch oversized work before committing to it
-- `fix` applies one phase at a time — version pins, gem updates, code fixes, iterative RSpec and RuboCop until green, then a verification + commit prompt so each phase lands as its own reviewable checkpoint
+- `plan` sequences work correctly (Ruby phases before Rails phases, intermediate versions in the right order), quantifies each phase (effort, risk, blast radius, confidence), **and creates the task list that drives the rest of the workflow**
+- `fix next` consumes the next pending task from the list; on successful commit it ticks the task off. Repeat until the list is empty.
 - `status` is an on-demand dashboard — useful for a full health snapshot, though `fix`'s built-in verification is what gates the commit
 
 ## Installation
@@ -110,17 +113,17 @@ All commands are namespaced under `/ruby-upgrade-toolkit:` to avoid conflicts wi
 
 ### `/ruby-upgrade-toolkit:upgrade ruby:X.Y.Z [rails:X.Y]`
 
-**The recommended starting point.** Runs the full upgrade pipeline automatically with a live task list and per-phase commit checkpoints.
+**The recommended starting point.** Runs the full upgrade pipeline automatically with per-phase commit checkpoints. Equivalent to running `/plan` once and then iterating `/fix next` until the task list is empty, with prerequisite and final infra checks bolted on either side.
 
 What it does:
-1. Detects current versions, validates Ruby ↔ Rails compatibility
-2. Computes the full upgrade path (intermediate versions for multi-step upgrades)
-3. Creates a `TodoWrite` task list for every sub-phase before starting
-4. Checks all intermediate Ruby versions are installed (stops early if not)
-5. Confirms a baseline: test failures and RuboCop offenses before any changes
-6. For each phase: activates the target Ruby (Ruby phases), then delegates to `fix` which applies pins/gems/code fixes, iterates to green, verifies, and **prompts for a git commit with a detailed message** — the per-phase checkpoint
-7. Rails phases follow after all Ruby phases are complete
-8. Auto-advances between phases once the commit lands — no "continue?" prompt
+1. Detects current versions, validates Ruby ↔ Rails compatibility, computes the full upgrade path
+2. **Delegates to `/plan`** to produce the roadmap + estimates and create the TodoWrite task list
+3. Checks all intermediate Ruby versions are installed (stops early if not)
+4. Confirms a baseline: test failures and RuboCop offenses before any changes
+5. Checks/creates an upgrade branch if needed
+6. Loops: invokes `/fix next` — which picks the next pending task, applies changes, iterates to green, verifies, **prompts for a git commit with a detailed message**, and ticks the task off on commit
+7. Auto-advances between phases once the commit lands — no "continue?" prompt
+8. After all apply-phase tasks are done, runs Final infra checks (CI/CD, Dockerfiles) and produces a summary
 9. On verification failure: pauses with full error output and three options — investigate+continue, retry the phase, or abort (no rollback; working tree holds the problematic changes)
 
 ```bash
@@ -153,11 +156,12 @@ Surfaces: Ruby breaking changes for the target version, Rails deprecations (if R
 
 ### `/ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y]`
 
-Generate a phased, project-specific upgrade roadmap. Detects current versions automatically.
+Generate a phased, project-specific upgrade roadmap **and** create the TodoWrite task list that drives `/fix next` and `/upgrade`. Detects current versions automatically.
 
-Produces a Markdown plan with: prerequisites, Ruby upgrade phases (one per intermediate version), Rails upgrade phases (if `rails:` given), and a final verification checklist. Each phase ends with RSpec green + RuboCop clean.
-
-Every plan leads with an **Estimate Summary** — per-phase effort (hours), risk (LOW/MED/HIGH), blast radius (files, call sites, gems touched), and confidence level. Numbers are derived from concrete grep counts and `bundle outdated` results, never guessed; each total ships with the formula so you can audit or override it.
+Produces:
+1. A Markdown plan with prerequisites, Ruby upgrade phases (one per intermediate version), Rails upgrade phases (if `rails:` given), and a final verification checklist.
+2. An **Estimate Summary** — per-phase effort (hours), risk (LOW/MED/HIGH), blast radius (files, call sites, gems touched), and confidence level. Numbers are derived from concrete grep counts and `bundle outdated` results, never guessed; each total ships with the formula so you can audit or override it.
+3. A **TodoWrite task list** — one task per apply-phase, in the canonical `Phase N — Ruby|Rails X.Y.Z: apply + verify + commit` format that `/fix next` parses. Re-running `/plan` overwrites the list (current repo state is authoritative).
 
 ```bash
 # Ruby-only plan
@@ -167,11 +171,15 @@ Every plan leads with an **Estimate Summary** — per-phase effort (hours), risk
 /ruby-upgrade-toolkit:plan ruby:3.3.1 rails:8.0
 ```
 
-### `/ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y] [scope:path]`
+### `/ruby-upgrade-toolkit:fix next | ruby:X.Y.Z [rails:X.Y] [scope:path]`
 
-Apply all upgrade changes. The primary execution command.
+Apply one phase of upgrade changes. The primary execution command, usable in two modes:
 
-Applies: `.ruby-version` and `Gemfile` pin updates, gem dependency updates, Ruby version-specific code fixes, Rails deprecation fixes (if `rails:` given), Rails config updates (if `rails:` given), iterative RSpec until green, iterative RuboCop until clean.
+**`/fix next`** — reads the task list created by `/plan`, picks the first pending task, parses the target from the task subject, and executes. On successful commit, ticks that task off the list. Best for iterating through a planned upgrade.
+
+**`/fix ruby:X.Y.Z [rails:X.Y] [scope:path]`** — explicit target. Useful when resuming, jumping to a specific phase, or running fix without a plan. If the explicit args happen to match a pending task, fix still ticks it off on commit.
+
+Either mode applies: `.ruby-version` and `Gemfile` pin updates, gem dependency updates, Ruby version-specific code fixes, Rails deprecation fixes (if `rails:` given), Rails config updates, iterative RSpec until green, iterative RuboCop until clean.
 
 When the phase reaches GREEN (or YELLOW — tests pass, warnings remain), `fix` builds a detailed proposed commit message that itemises what changed (version pins, gem diffs, fix counts, verification results) and prompts you to `yes / edit / no`:
 
@@ -186,10 +194,13 @@ The same prompt runs whether you call `/fix` directly or it's driven by `/upgrad
 Flags CI/CD pipeline files and Dockerfiles for manual update — never modifies them automatically.
 
 ```bash
-# Fix Ruby upgrade
+# Typical manual flow — run /plan once, then iterate this:
+/ruby-upgrade-toolkit:fix next
+
+# Explicit target (ignores the task list)
 /ruby-upgrade-toolkit:fix ruby:3.3.1
 
-# Fix Ruby + Rails upgrade
+# Explicit target, Ruby + Rails
 /ruby-upgrade-toolkit:fix ruby:3.3.1 rails:8.0
 
 # Fix a single file only (gem/pin changes still apply project-wide)
@@ -236,7 +247,7 @@ Then run one command:
 /ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:7.2
 ```
 
-Claude detects versions, builds the full concrete task list, and starts working through it:
+Claude delegates task list creation to `/plan`, runs prerequisite checks, and then loops through the tasks:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -245,19 +256,16 @@ Ruby:  3.1.4 → 3.3.1
 Rails: 7.0.8 → 7.2
 Path:  Ruby: 3.1 → 3.2 → 3.3 | Rails: 7.0 → 7.1 → 7.2
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task list created. Starting Phase 0.
+Task list created by /plan. Running prerequisites next.
 
-☑ Phase 0  — Prerequisites: test baseline + upgrade branch
-☐ Phase 1a — Ruby 3.2.4: activate
-☐ Phase 1b — Ruby 3.2.4: apply + verify + commit (via fix)
-☐ Phase 2a — Ruby 3.3.1: activate
-☐ Phase 2b — Ruby 3.3.1: apply + verify + commit (via fix)
-☐ Phase 3  — Rails 7.1: apply + verify + commit (via fix)
-☐ Phase 4  — Rails 7.2: apply + verify + commit (via fix)
-☐ Phase 5  — Final verification: infra checks (CI/CD, Dockerfile)
+☐ Phase 1 — Ruby 3.2.4: apply + verify + commit
+☐ Phase 2 — Ruby 3.3.1: apply + verify + commit
+☐ Phase 3 — Rails 7.1: apply + verify + commit
+☐ Phase 4 — Rails 7.2: apply + verify + commit
+☐ Final  — Infra checks (CI/CD, Dockerfile) + checklist
 ```
 
-As each phase completes, its task is ticked off. Each phase ends with fix's commit prompt:
+Upgrade then loops `/fix next` — each invocation picks the first pending task, runs the full apply → verify → commit flow, and ticks that task off. As each phase completes, its task is ticked off. Each phase ends with fix's commit prompt:
 
 ```
 ━━━ Phase verification: GREEN ━━━
@@ -397,10 +405,14 @@ Install each intermediate Ruby version via rbenv/rvm before starting the fix pha
 
 #### Step 3a — Fix Phase 1: 2.7 → 3.0
 
+`/plan` in Step 2 created the task list. You can either let `/fix next` resolve the target from that list, or pass an explicit target. Both produce the same result; `next` is ergonomic once a plan exists.
+
 Activate Ruby 3.0.7 first: `rbenv local 3.0.7`
 
 ```
-/ruby-upgrade-toolkit:fix ruby:3.0.7
+/ruby-upgrade-toolkit:fix next
+# equivalent to:
+# /ruby-upgrade-toolkit:fix ruby:3.0.7
 ```
 
 Claude applies changes in this order:
@@ -475,19 +487,20 @@ GREEN — proceed to Phase 2.
 
 #### Steps 3b–3d — Phases 2, 3, 4 (repeat the pattern)
 
+Activate each intermediate Ruby, then run `/fix next` — it will resolve the target from whatever is still pending in the task list:
+
 ```
 rbenv local 3.1.6
-/ruby-upgrade-toolkit:fix ruby:3.1.6
-/ruby-upgrade-toolkit:status   # must be GREEN
+/ruby-upgrade-toolkit:fix next
 
 rbenv local 3.2.4
-/ruby-upgrade-toolkit:fix ruby:3.2.4
-/ruby-upgrade-toolkit:status   # must be GREEN
+/ruby-upgrade-toolkit:fix next
 
 rbenv local 3.3.1
-/ruby-upgrade-toolkit:fix ruby:3.3.1
-/ruby-upgrade-toolkit:status   # must be GREEN — upgrade complete
+/ruby-upgrade-toolkit:fix next          # last apply phase — upgrade complete
 ```
+
+`status` is still available any time you want a full dashboard (`/ruby-upgrade-toolkit:status`), but fix's built-in verification has already gated each commit.
 
 Phases 2–4 are typically much faster than Phase 1. The 2.7→3.0 step carries the bulk of the breaking changes.
 

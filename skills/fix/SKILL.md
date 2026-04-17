@@ -1,9 +1,9 @@
 ---
 name: Upgrade Fix
-description: Use when the user runs /ruby-upgrade-toolkit:fix or asks to apply upgrade fixes, bump Ruby/Rails versions, fix deprecations, fix RSpec failures after upgrading, or fix RuboCop issues. Accepts ruby:X.Y.Z, optional rails:X.Y, and optional scope:path arguments. Applies all changes and iterates until RSpec and RuboCop are green.
-argument-hint: "ruby:X.Y.Z [rails:X.Y] [scope:path]"
-allowed-tools: Read, Edit, Bash, Glob, Grep
-version: 0.3.0
+description: Use when the user runs /ruby-upgrade-toolkit:fix or asks to apply upgrade fixes, bump Ruby/Rails versions, fix deprecations, fix RSpec failures after upgrading, or fix RuboCop issues. Accepts `next` (read target from the task list) OR explicit ruby:X.Y.Z, optional rails:X.Y, and optional scope:path arguments. Applies all changes, iterates until green, verifies, prompts for commit, and ticks off the matching task.
+argument-hint: "next | ruby:X.Y.Z [rails:X.Y] [scope:path]"
+allowed-tools: Read, Edit, Bash, Glob, Grep, TodoWrite
+version: 0.4.0
 ---
 
 # Upgrade Fix
@@ -12,10 +12,37 @@ Apply all upgrade changes end-to-end: version pins, gem dependencies, code fixes
 
 ## Argument Parsing
 
-Extract from arguments:
+Two modes:
+
+**Explicit mode:**
 - `ruby:X.Y.Z` — required target Ruby version
 - `rails:X.Y` — optional target Rails version
 - `scope:path` — optional; restricts code-level fixes to this file or directory. Gem and version pin changes always apply project-wide.
+
+**Next mode:**
+- `next` (bare keyword, no value) — resolve the target from the task list created by `/plan`. See Step 1b below.
+
+`next` is mutually exclusive with `ruby:`/`rails:`. If both are given, surface an error and stop. If neither is given, surface: `Provide either 'next' (requires a plan) or 'ruby:X.Y.Z [rails:X.Y]'.`
+
+## Step 1b: Resolve target in `next` mode
+
+Skip this step if the user passed explicit `ruby:`/`rails:` arguments.
+
+Call `TodoWrite` to list pending tasks. Find the first pending task whose subject matches one of these regex patterns:
+
+- `^Phase \d+ — Ruby (\d+\.\d+\.\d+): apply \+ verify \+ commit$` → extract Ruby patch version; set `TARGET_RUBY = <match>`, no Rails arg.
+- `^Phase \d+ — Rails (\d+\.\d+): apply \+ verify \+ commit$` → extract Rails minor; set `TARGET_RAILS = <match>`. Read current Ruby (`ruby -v`) and use it verbatim as `TARGET_RUBY`.
+- `^Final — Infra checks` → this task is not fix-actionable. Print: `Next task is 'Final — Infra checks'. Run /upgrade to execute it, or tick it off manually after you've updated CI/CD and Dockerfiles.` Exit.
+
+If no pending task matches, print:
+```
+No pending fix tasks in the task list.
+Run /ruby-upgrade-toolkit:plan ruby:X.Y.Z [rails:X.Y] to generate one,
+or pass explicit args: /ruby-upgrade-toolkit:fix ruby:X.Y.Z [rails:X.Y]
+```
+and exit.
+
+Record the task ID — Step 8e will tick it off after a successful commit.
 
 ## Step 1: Detect Current Versions
 
@@ -458,7 +485,7 @@ Never use `--no-verify`, `--amend`, or `--force`. If a pre-commit hook fails, su
 
 ### 8e. After committing
 
-Print a one-line confirmation with the short SHA, then produce the summary below.
+Print a one-line confirmation with the short SHA. If this invocation resolved its target from the task list (i.e. the user passed `next`, or the explicit args happen to match a pending task's subject), mark that task complete via `TodoWrite`. Then produce the summary below.
 
 ## Step 9: Produce Summary
 
