@@ -1,0 +1,148 @@
+# ruby-upgrade-toolkit — custom rules
+# Documentation: /ruby-upgrade-toolkit:rules show <id> | docs/superpowers/specs/2026-04-24-custom-rules-design.md
+#
+# This file is picked up automatically by /audit, /plan, /fix, /upgrade, and /status
+# when present. With no rules.yml, every command behaves byte-identically to without
+# this feature — rules are strictly additive.
+#
+# Every example below is disabled by default (enabled: false). Turn on the ones you
+# want, or delete the rest.
+
+version: 1
+
+# Optional — whitelisted policy defaults. Equivalent to writing policy-override
+# rules for each setting. Only the keys below are accepted.
+#
+# defaults:
+#   rubocop.enabled: true
+#   baseline_failures_allowed: 0
+#   require_zero_deprecations: false
+#   require_zeitwerk_clean: true
+
+rules:
+
+  # ─── gem-constraint ────────────────────────────────────────────────────────
+  # Pin, cap, floor, or forbid a gem during bundle resolution.
+  - id: example-devise-pin
+    type: gem-constraint
+    enabled: false
+    gem: devise
+    constraint: '>= 4.9'
+    description: "Required for Rails 7+ compatibility"
+
+  - id: example-forbid-phantomjs
+    type: gem-constraint
+    enabled: false
+    gem: phantomjs
+    mode: forbid
+    description: "Deprecated upstream; never allow it back in the Gemfile"
+
+  # ─── gem-swap ──────────────────────────────────────────────────────────────
+  # Replace gem X with gem Y (may be a list). Bundle optional code rewrites that
+  # make the application work with the new gem.
+  - id: example-phantomjs-to-selenium
+    type: gem-swap
+    enabled: false
+    from: phantomjs
+    to:
+      - { name: selenium-webdriver, constraint: '~> 4.0' }
+      - { name: webdrivers, constraint: '~> 5.0' }
+    code_transforms:
+      - pattern: "Capybara.javascript_driver = :poltergeist"
+        replacement: "Capybara.javascript_driver = :selenium_chrome_headless"
+    description: "Replace phantomjs with selenium + headless chromium"
+
+  # ─── gem-swap with private source ──────────────────────────────────────────
+  # Use this pattern for paid gems like Sidekiq Pro. Credentials are read from
+  # the named environment variable — the secret itself is never stored here.
+  - id: example-sidekiq-to-pro
+    type: gem-swap
+    enabled: false
+    from: sidekiq
+    to:
+      - name: sidekiq-pro
+        constraint: '~> 7.0'
+        source:
+          url: https://gems.contribsys.com/
+          credentials_env: BUNDLE_GEMS__CONTRIBSYS__COM
+    description: "Upgrade to Sidekiq Pro"
+
+  # ─── target-substitute ─────────────────────────────────────────────────────
+  # Redirect the upgrade target itself. Use for paid distributions like Rails LTS —
+  # stay on a specific Rails version with backported security patches instead of
+  # upgrading to mainline Rails.
+  - id: example-rails-lts
+    type: target-substitute
+    enabled: false
+    target: rails
+    replacement:
+      gem: railslts-version
+      constraint: '~> 6.1.7'
+      source:
+        url: https://railslts.com
+        credentials_env: BUNDLE_RAILSLTS__COM
+    description: "Use Rails LTS 6.1 (paid backports) instead of mainline Rails"
+
+  # ─── code-transform ────────────────────────────────────────────────────────
+  # Apply a project-wide code rewrite during every apply phase. Default mode is
+  # literal string match; opt into regex with mode: regex.
+  - id: example-logger-rename
+    type: code-transform
+    enabled: false
+    pattern: "MyApp::LegacyLogger.log"
+    replacement: "Rails.logger.info"
+    mode: literal
+    files: ["app/**/*.rb", "lib/**/*.rb"]
+    description: "Retire the legacy logger wrapper"
+
+  # ─── phase-inject ──────────────────────────────────────────────────────────
+  # Insert an extra shell command at the start or end of a specific phase's
+  # apply step. Action must be a single command (no pipes, redirects, or
+  # chaining in v1).
+  - id: example-dump-schema-cache
+    type: phase-inject
+    enabled: false
+    phase: rails:7.0
+    timing: before
+    action: "bundle exec rails db:schema:cache:dump"
+    description: "Refresh schema cache before Rails 7 activates strict loading"
+
+  # ─── verification-gate ─────────────────────────────────────────────────────
+  # Additional gate that must (required: true) or may (required: false) pass
+  # before a phase reaches GREEN. Runs alongside RSpec and RuboCop.
+  - id: example-brakeman
+    type: verification-gate
+    enabled: false
+    command: "bundle exec brakeman --no-pager --exit-on-warn"
+    when: { phases: [all] }
+    timing: after
+    required: true
+    description: "Every phase must pass Brakeman before commit"
+
+  - id: example-reek-advisory
+    type: verification-gate
+    enabled: false
+    command: "bundle exec reek --no-color"
+    when: { phases: [ruby-phases] }
+    timing: after
+    required: false
+    description: "Report Reek offenses but don't block GREEN"
+
+  # ─── policy-override ───────────────────────────────────────────────────────
+  # Tweak a whitelisted toolkit default. See the schema reference for the full
+  # list of settings accepted in v1.
+  - id: example-no-rubocop
+    type: policy-override
+    enabled: false
+    setting: rubocop.enabled
+    value: false
+    description: "RuboCop runs in separate CI job — skip it in the fix loop"
+
+  # ─── intermediate-pin ──────────────────────────────────────────────────────
+  # Pin a specific patch version during path computation. Useful when you need
+  # a known-good patch instead of "latest in the minor."
+  - id: example-pin-ruby-326
+    type: intermediate-pin
+    enabled: false
+    ruby: 3.2.6
+    description: "Stay on 3.2.6 for jemalloc compat"

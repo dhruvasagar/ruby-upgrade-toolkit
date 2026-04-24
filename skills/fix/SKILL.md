@@ -24,6 +24,42 @@ Two modes:
 
 `next` is mutually exclusive with `ruby:`/`rails:`. If both are given, surface an error and stop. If neither is given, surface: `Provide either 'next' (requires a plan) or 'ruby:X.Y.Z [rails:X.Y]'.`
 
+## Step 0: Load custom rules (if present)
+
+Apply the "Load" and "Schema check" sections of
+`$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`.
+
+If `.ruby-upgrade-toolkit/rules.yml` is absent, set `RULES_LOADED = false`.
+Fix behaves byte-identically to a version without this feature — skip every
+rules-specific substep below.
+
+If rules are loaded:
+- Schema errors abort fix before any file changes (suggest running
+  `/ruby-upgrade-toolkit:rules validate`).
+- Apply the "Preflight (credentials)" check for the rules that match this
+  phase (via the engine's "Rule resolution" section). Missing credential
+  env vars for matched rules abort fix with the preflight error template.
+- Remember the filtered rule set for use in Steps 2–8.
+
+The engine's "Apply ordering" section governs interleaving of rules with
+built-in steps. Specifically, within this phase:
+
+1. Run `phase-inject` rules (`timing: before`) matched to this phase.
+2. Execute built-in Steps 2–5 (version pins, gem resolution, Ruby code
+   fixes, Rails fixes).
+3. After built-in apply steps and before Step 6 (RSpec), run
+   `code-transform` rules matched to this phase, in declared order.
+4. Run `gem-swap` rules matched to this phase: edit Gemfile (remove `from`,
+   add each `to[]`), run `bundle install`, apply the swap's
+   `code_transforms[]`. Any private-source `to[]` entry must have its
+   `source` block written as the Gemfile `source ... do ... end` block; the
+   tool reads credentials from the environment at bundle time (never echoes
+   them).
+5. Run `phase-inject` rules (`timing: after`) matched to this phase.
+
+Apply the swap's `code_transforms[]` using the same literal-or-regex
+machinery as standalone `code-transform` rules.
+
 ## Step 1b: Resolve target in `next` mode
 
 Skip this step if the user passed explicit `ruby:`/`rails:` arguments.
@@ -411,6 +447,25 @@ Throughout Steps 2–7, keep a running record of what was changed:
 
 Load `$CLAUDE_PLUGIN_ROOT/skills/status/SKILL.md` and run it to produce the readiness tier (GREEN / YELLOW / RED). Compare test-suite failures against `BASELINE_FAILURES` — only **new** failures count as regressions.
 
+If `RULES_LOADED` is true, interleave `verification-gate` rules with the
+built-in gates per the engine's "Apply ordering" (verify) section:
+
+1. Run each `timing: before` gate matching this phase.
+2. Run the built-in status gates (RSpec, deprecations, RuboCop, Zeitwerk).
+3. Run each `timing: after` gate matching this phase.
+
+For each gate: run the `command`, capture exit code + last 40 lines of
+output.
+
+- Exit 0 → pass; record as `[gate-id] PASS`.
+- Non-zero + `required: true` → tier becomes RED regardless of built-in
+  gates. Print the gate's id and last-40-lines output under a
+  `⛔ Required gate failed: <id>` header. Skip to 8b's RED branch.
+- Non-zero + `required: false` → mark as advisory FAILED, continue. Does
+  not affect the tier. Recorded for the commit message.
+
+Record outcomes in `RULE_GATE_RESULTS` for Step 8c.
+
 ### 8b. Decide by tier
 
 **RED** (new failures above baseline):
@@ -457,10 +512,16 @@ Rails changes:                          (omit whole section if no rails: arg)
 - [Open-redirect decisions: N (option A/B/C per site)]
 - [Turbolinks → Turbo: migrated]
 
+Custom rules applied:                    (omit whole section if RULES_LOADED is false OR no rules fired this phase)
+- [<rule-id>] <one-line effect summary — file counts, gem diffs, gate result>
+- ...
+
 Verification:
 - RSpec: [PASSING] examples, [F] failures ([BASELINE] pre-existing, 0 new)
 - RuboCop: [N] offenses
 - Deprecation warnings: [N]
+- [Custom gate <id>: PASS (0 warnings)]          (one line per rule gate, required)
+- [Custom gate <id>: ADVISORY FAILED (N issues)] (omit required/advisory label if none)
 - Tier: [GREEN|YELLOW]
 ```
 

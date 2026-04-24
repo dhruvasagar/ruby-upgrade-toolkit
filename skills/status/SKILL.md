@@ -12,6 +12,19 @@ Generate a health dashboard for the current state of the upgrade. Run this after
 
 This skill is a thin consumer of the canonical verification commands — load `$CLAUDE_PLUGIN_ROOT/skills/rails-upgrade-guide/references/verification-suite.md` once at the start and use its blocks for each step below.
 
+## Step 0: Load custom rules (if present)
+
+Apply the "Load" section of
+`$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`.
+
+If `.ruby-upgrade-toolkit/rules.yml` is absent, set `RULES_LOADED = false`
+and skip the Custom gates section in Step 8 — the report is byte-identical
+to pre-rules behavior.
+
+If rules are loaded, collect the active `verification-gate` rules whose
+`when.phases` includes the current project's state (use the engine's "Rule
+resolution" section). These will be run and reported in Step 8.
+
 ## Step 1: Detect Versions
 
 ```bash
@@ -75,6 +88,20 @@ Branch: [branch name]
 
 ## Zeitwerk (Rails only)
 - [OK / N errors]
+
+## Custom gates (include only if RULES_LOADED is true AND active verification-gate rules exist)
+For each active verification-gate rule:
+- Run the gate's `command`, capture exit code + last 40 lines.
+- Exit 0 → `[rule-id] PASS`
+- Non-zero + required → `[rule-id] FAIL (required) — see output below`, contributes to RED tier
+- Non-zero + advisory → `[rule-id] ADVISORY (N issues, not blocking)`, does NOT affect tier
+
+Render as:
+```
+## Custom gates
+- [brakeman-gate] PASS (required)
+- [reek-gate] ADVISORY 14 issues (not blocking)
+```
 
 ## Overall Readiness: [RED / YELLOW / GREEN]
 

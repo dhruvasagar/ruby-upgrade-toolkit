@@ -16,6 +16,29 @@ Extract target versions from the arguments:
 - `ruby:X.Y.Z` — required target Ruby version
 - `rails:X.Y` — optional target Rails version (omit if Ruby-only upgrade)
 
+## Step 0: Load custom rules (if present)
+
+Apply the "Load", "Schema check", and "Conflict detection" sections of
+`$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`.
+
+If `.ruby-upgrade-toolkit/rules.yml` is absent, set `RULES_LOADED = false`
+and proceed — the plan output is byte-identical to a version without this
+feature.
+
+If rules are loaded:
+- Schema errors abort the plan with the validator's messages (suggest
+  `/ruby-upgrade-toolkit:rules validate`).
+- `intermediate-pin` rules override the patch versions chosen in Step 3
+  (upgrade path computation). Apply them there.
+- `target-substitute` rules with `target: rails` change the Rails
+  destination of the path — intermediate mainline Rails hops are skipped,
+  replaced by a single substitute phase.
+- `policy-override` rules with `rubocop.enabled: false` remove RuboCop
+  steps from every phase's checklist.
+- Non-overriding rules (`gem-constraint`, `gem-swap`, `code-transform`,
+  `phase-inject`, `verification-gate`) are recorded for the per-phase
+  annotation pass in Step 6.
+
 ## Step 1: Detect Current Versions
 
 ```bash
@@ -104,6 +127,20 @@ Report concrete counts only — no ranges, no guesses:
 
 Output a Markdown-formatted plan with the following structure. Fill in specifics based on what was found in Steps 1–4.
 
+**Rule annotations.** If `RULES_LOADED` is true, apply the "Rule resolution"
+section of `$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`
+against each generated phase. For every rule that fires in a phase, add a
+checklist line under that phase with the format
+`- [rule: <rule-id>] <one-line description of the effect>`. Rule-driven
+lines are interleaved with built-ins in the order defined by the engine's
+"Apply ordering" section. Built-in lines remain untagged; only rule-driven
+lines carry the `[rule: <id>]` prefix. A `target-substitute` that redirects
+the Rails path adds a header note to the affected phase
+(`Rails Phase 1: 6.1 → Rails LTS 6.1  ← path redirected by rule: <id>`).
+
+If `RULES_LOADED` is false, skip annotations entirely — output is byte-
+identical to pre-rules behavior.
+
 ---
 
 ### Plan header
@@ -117,14 +154,17 @@ App: [name from config/application.rb or directory name]
 
 ### Estimate Summary
 
-| Phase | Effort | Risk | Blast radius | Confidence |
-|-------|--------|------|--------------|------------|
-| Phase 1: Ruby  | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | LOW/MED/HIGH |
-| Phase 2: Rails | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | LOW/MED/HIGH |
-| Phase 3: Verify | ~Xh  | LOW          | —                        | HIGH         |
-| **Total**      | **~Xh** | **worst of above** | — | **lowest of above** |
+| Phase | Effort | Risk | Blast radius | Rules contrib | Confidence |
+|-------|--------|------|--------------|---------------|------------|
+| Phase 1: Ruby  | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | +0 or +<time> from <ids> | LOW/MED/HIGH |
+| Phase 2: Rails | ~Xh   | LOW/MED/HIGH | N files, M sites, K gems | +0 or +<time> from <ids> | LOW/MED/HIGH |
+| Phase 3: Verify | ~Xh  | LOW          | —                        | — | HIGH         |
+| **Total**      | **~Xh** | **worst of above** | — | +<time> total | **lowest of above** |
 
-Below the table, list the exact formulas used (e.g. `Phase 1 = 12 kwarg × 2min + 2 gems × 30min + 1 hop × 60min = 144min ≈ 2.5h`) so the user can audit or override.
+If `RULES_LOADED` is false, omit the `Rules contrib` column entirely (byte-
+identical output to non-rules mode).
+
+Below the table, list the exact formulas used (e.g. `Phase 1 = 12 kwarg × 2min + 2 gems × 30min + 1 hop × 60min = 144min ≈ 2.5h`) so the user can audit or override. If rules contributed, add a `Rules:` sub-line per phase listing each rule id and its effort bump (using the rubric in audit SKILL Custom Rules Impact section).
 
 ### Phase 0: Prerequisites
 

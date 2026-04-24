@@ -16,6 +16,25 @@ Extract target versions from the arguments:
 - `ruby:X.Y.Z` — required target Ruby version
 - `rails:X.Y` — optional target Rails version
 
+## Step 0: Load custom rules (if present)
+
+Apply the "Load", "Schema check", "Conflict detection", and "Preflight
+(credentials)" sections of
+`$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`.
+
+If `.ruby-upgrade-toolkit/rules.yml` is absent, set `RULES_LOADED = false`
+and skip all custom-rules treatment below — the audit produces output
+byte-identical to a version without this feature.
+
+If rules are loaded:
+- Schema errors abort the audit with the validator's messages (run
+  `/ruby-upgrade-toolkit:rules validate` for details).
+- Schema warnings are collected and surfaced in the "Custom Rules Impact"
+  section of the final report.
+- Missing credentials are flagged as errors for the affected rules at
+  audit time (see the engine reference, "Preflight" section, audit-time
+  rule).
+
 ## Step 1: Detect Current Versions
 
 ```bash
@@ -277,8 +296,34 @@ High: >30 keyword arg sites, Rails upgrade also required, or gem with no compati
 
 Overall: [Low / Medium / High]
 
+## Custom Rules Impact (include only if RULES_LOADED is true)
+For each active rule in rules.yml, list:
+- Rule id and type
+- Which phases it will affect (from engine's Rule resolution logic)
+- Estimated incremental effort (see per-type effort bumps below)
+- Preflight status (credentials set/unset) for private-source rules
+- Any validator warnings that apply to this rule
+
+Also list any schema warnings surfaced by the engine's conflict-detection
+pass (e.g., "constraint overridden by later swap").
+
+If a `target-substitute` rule is active, add a "Target redirected" note to
+the Upgrade Path line at the top of the report — the path that will be
+executed differs from the mainline path.
+
+### Per-type incremental effort bumps for the Effort Estimate
+- gem-constraint: +0 (enforced at bundle resolution, no extra work)
+- gem-swap: +30min per swap + 2min × code_transform site count
+- target-substitute: -60min per skipped mainline hop (Rails LTS skips Rails phases) + 30min for substitution setup
+- code-transform: 2min × matched sites × affected phases
+- phase-inject: 5min overhead per phase it fires in
+- verification-gate: 5min overhead per phase × (1 + 0.5 if required)
+- policy-override: +0
+- intermediate-pin: +0 (just a version override in plan)
+
 ## Recommended Next Steps
 1. Run `/ruby-upgrade-toolkit:plan ruby:[TARGET] [rails:[TARGET]]` to generate the phased roadmap
 2. [Most critical issue to fix first]
 3. [Second priority]
+4. (if RULES_LOADED and any preflight failed) Set missing credential env vars before running /upgrade — see Custom Rules Impact section
 ```

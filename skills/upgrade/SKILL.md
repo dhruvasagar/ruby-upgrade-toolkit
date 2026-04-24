@@ -177,6 +177,30 @@ Wait for confirmation before proceeding.
 
 Run the "RuboCop — offense count (JSON)" block. Record `BASELINE_RUBOCOP`.
 
+### 5e. Custom rules preflight
+
+Apply the "Load", "Schema check", and "Preflight (credentials)" sections of
+`$CLAUDE_PLUGIN_ROOT/skills/rules/references/rules-engine.md`, using the
+**upgrade-time** strictness level: missing credential env vars are a **hard
+error**.
+
+If `.ruby-upgrade-toolkit/rules.yml` is absent, set `RULES_LOADED = false`
+and skip this entire substep — upgrade behaves byte-identically to a
+version without this feature.
+
+If rules are loaded:
+- Schema errors stop the upgrade here (before any phase runs) with the
+  validator's messages and a pointer to `/ruby-upgrade-toolkit:rules validate`.
+- Missing credential env vars: print the preflight error template from the
+  engine reference (lists every missing var and the command to set each),
+  then stop.
+- Run the engine's "Rule resolution" pass once against every phase in the
+  task list to build `RULES_BY_PHASE`. This drives the per-phase preview
+  banner in Step 6.
+
+Print: `✓ Custom rules preflight OK — N active rules across M phases`
+(or the appropriate "no rules.yml present" message).
+
 Print: `✓ Prerequisites complete — baseline recorded (N RSpec failures, N RuboCop offenses)`
 
 ---
@@ -301,14 +325,35 @@ Failures introduced by this phase: N (above the N pre-existing baseline)
   C) Abort                — reply "abort" to stop here. All changes made so far
                              are preserved — nothing is rolled back.
 
+  D) Disable rule <id>    — (only shown when a custom rule caused the failure,
+                             e.g. a required verification-gate failed). Reply
+                             "disable rule <id>" to flip that rule's enabled flag
+                             to false and retry this phase. Use when you want to
+                             unblock the pipeline and revisit the rule later
+                             rather than editing rules.yml mid-run.
+
 Waiting for your decision...
 ```
+
+When rendering this prompt: include option D only if `RULES_LOADED` is true
+and at least one of the failures is attributable to a rule-driven gate or
+rule-driven step. Identify the responsible rule from `RULE_GATE_RESULTS` /
+phase apply outcomes. When multiple rules contributed, list each as its own
+D-sub-option (D1, D2, …).
 
 **When the user replies "continue":**
 Re-run the verification step for the current phase. If now GREEN, mark the phase complete and proceed to the next phase.
 
 **When the user replies "retry phase [name]":**
 Re-run that phase's fix step (not the version pin step — only the code/gem fix step) from the beginning, then re-verify.
+
+**When the user replies "disable rule <id>":**
+Invoke `/ruby-upgrade-toolkit:rules disable <id>` (via the rules skill — same
+file edit, same confirmation semantics as if the user called it directly).
+Reload the rules file. Retry the phase from its verify step. Record in the
+final summary that rule `<id>` was disabled mid-run so it shows up in the
+"Manual steps still required" section (suggest re-enabling and re-running
+when the underlying issue is addressed).
 
 **When the user replies "abort":**
 Print a summary of what was completed and what was not. Do not roll back any changes. Exit.

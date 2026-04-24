@@ -4,7 +4,7 @@ A Claude Code plugin for upgrading Ruby projects safely — including Ruby on Ra
 
 ## How It Works
 
-The plugin gives Claude a structured, repeatable methodology for Ruby and Rails upgrades. The five commands compose — use as many or as few as you need.
+The plugin gives Claude a structured, repeatable methodology for Ruby and Rails upgrades. The six commands compose — use as many or as few as you need. A sixth command — `rules` — is optional: it manages a project-local policy file (gem pins, gem swaps, Rails LTS / Sidekiq Pro substitutions, extra verification gates like Brakeman) that the other commands pick up automatically.
 
 ### Mode 1: Fully automated
 
@@ -218,13 +218,79 @@ Reports: current vs. target versions, test suite pass/fail, deprecation warning 
 
 `fix` runs this internally before prompting for its per-phase commit, so the same tier is already gating the commit. Call `/status` directly when you want an on-demand snapshot outside the fix flow — e.g., to check health mid-session or after a manual edit.
 
+When a `rules.yml` is present with active `verification-gate` rules, `status` adds a **Custom gates** section listing each gate's latest result (PASS / FAIL / ADVISORY). Brakeman and Reek counts show up here the same way RuboCop offenses do.
+
 ```bash
 /ruby-upgrade-toolkit:status
 ```
 
+### `/ruby-upgrade-toolkit:rules [subcommand] [args]`
+
+Manage the project's custom rules — a YAML file at `.ruby-upgrade-toolkit/rules.yml` that declares project-specific upgrade policies: gem pins, gem swaps, private-source substitutions (Rails LTS, Sidekiq Pro), extra verification gates (Brakeman, Reek, custom scripts), and whitelisted policy overrides. Once the file is present, the other commands (`audit`, `plan`, `fix`, `upgrade`, `status`) pick it up automatically — no additional flags required.
+
+With no `rules.yml`, every command behaves byte-identically to a version without this feature. The feature is strictly additive.
+
+| Subcommand | What it does |
+|---|---|
+| `init` | Creates a starter `rules.yml` with one commented example per rule type (all disabled by default). No-op if the file already exists. |
+| `validate` | Schema-checks the file. Reports unknown types, duplicate IDs, conflicts, missing credential env vars. Exits non-zero on error (CI-usable). |
+| `list [--all]` | Shows active rules. `--all` includes disabled. Default when called with no subcommand. |
+| `show <id>` | Full detail for one rule: raw YAML, computed effects, phases it will fire in, preflight status, conflicts. |
+| `add <type>` | Interactive Q&A authoring — Claude asks class-specific questions, writes the YAML, validates, shows a diff, confirms. |
+| `remove <id>` | Deletes a rule after a diff preview and confirmation. |
+| `disable <id>` / `enable <id>` | Toggles the `enabled` flag without removing the rule. |
+| `explain` | Dry-run against the current project: lists which rules will fire this run, which are no-ops, and why. |
+
+**Rule types (v1 vocabulary):**
+
+| `type` | Purpose |
+|---|---|
+| `gem-constraint` | Pin/cap/floor/forbid a gem (e.g., `devise >= 4.9`). |
+| `gem-swap` | Replace gem X with gem Y — may include companion gems and code transforms (phantomjs → selenium-webdriver). |
+| `target-substitute` | Redirect the upgrade target itself to an alternate gem/source (mainline Rails → Rails LTS). |
+| `code-transform` | Pattern-based code rewrite run during each matching phase's apply step (literal default; regex opt-in). |
+| `phase-inject` | Insert a shell command into a specific phase (before/after the built-in apply step). |
+| `verification-gate` | Additional GREEN gate — Brakeman, Reek, `bin/your-check.sh`. Required gates block the commit; advisory gates just report. |
+| `policy-override` | Tweak toolkit defaults from a whitelisted set (e.g., `rubocop.enabled: false`, `require_zero_deprecations: true`). |
+| `intermediate-pin` | Pin a specific patch version during path computation (`ruby: 3.2.6`, not "latest 3.2"). |
+
+**Private gem sources (Rails LTS, Sidekiq Pro):** declare `credentials_env: YOUR_ENV_VAR` in the rule. The toolkit reads the env var at preflight and blocks the phase with a clear error if unset. The secret itself is never stored in `rules.yml` — only the env var's name.
+
+**How active rules affect other commands:**
+
+- `audit` adds a **Custom Rules Impact** section and flags any preflight failures (missing credentials, unreachable private sources).
+- `plan` annotates phase checklists inline: built-in steps are unmarked, rule-driven steps get a `[rule: <id>]` tag. The Estimate Summary adds a "Rules contrib" column. A `target-substitute` redirects the path (e.g., mainline Rails hops replaced by an LTS substitute phase).
+- `fix` applies rule transforms in a defined order (phase-inject-before → built-ins → code-transforms → gem-swaps → phase-inject-after), runs rule gates alongside RSpec/RuboCop, and itemizes each rule's outcome in the proposed commit message.
+- `upgrade` preflights credentials for all private-source rules before the loop. The failure-recovery menu gains a fourth option: `D) Disable rule <id> and retry`.
+- `status` adds a **Custom gates** section listing each `verification-gate` with its latest result.
+
+```bash
+# Scaffold a rules file (all examples disabled by default)
+/ruby-upgrade-toolkit:rules init
+
+# Interactively author rules
+/ruby-upgrade-toolkit:rules add verification-gate
+/ruby-upgrade-toolkit:rules add gem-swap
+/ruby-upgrade-toolkit:rules add target-substitute
+
+# Inspect
+/ruby-upgrade-toolkit:rules list
+/ruby-upgrade-toolkit:rules show brakeman-gate
+/ruby-upgrade-toolkit:rules explain
+
+# Toggle without editing the file
+/ruby-upgrade-toolkit:rules disable reek-gate
+/ruby-upgrade-toolkit:rules enable reek-gate
+
+# CI-friendly validation
+/ruby-upgrade-toolkit:rules validate
+```
+
+Full schema and semantics: `docs/superpowers/specs/2026-04-24-custom-rules-design.md`. Scenario 4 below walks through a complete real-world example (Rails LTS + Brakeman gate + phantomjs swap).
+
 ## Workflow Examples
 
-Four complete walkthroughs below. Scenario 0 uses the automated `upgrade` command — the fastest path. Scenarios 1–3 use the manual `audit → plan → fix → status` loop for full control.
+Five complete walkthroughs below. Scenario 0 uses the automated `upgrade` command — the fastest path. Scenarios 1–3 use the manual `audit → plan → fix → status` loop for full control. Scenario 4 demonstrates custom rules (Rails LTS + Brakeman gate + gem swap).
 
 > **Rule of thumb:** `fix` runs verification and prompts for a commit before the phase "completes" — so the commit itself is the checkpoint. Only decline or hit RED if something actually looks wrong. You can still run `/status` any time for a full on-demand dashboard.
 
@@ -844,6 +910,190 @@ Suggested Next Step: Update CI/CD rails version, update Dockerfiles, merge.
 
 ---
 
+### Scenario 4: Upgrade with custom rules (Rails LTS + Brakeman gate + phantomjs swap)
+
+**Starting state:** Ruby 3.2.4, Rails 6.1.7. The team has three project-specific constraints the toolkit can't infer on its own:
+
+- **Paid Rails LTS subscription** — they want to stay on Rails 6.1 with backported security patches instead of moving to mainline Rails 7+.
+- **Security policy** — every upgrade phase must pass `bundle exec brakeman --no-pager --exit-on-warn`; failures block the per-phase commit.
+- **Legacy dependency** — `phantomjs` should be replaced with `selenium-webdriver + webdrivers`, and the Capybara driver config should flip to headless chromium during the same phase.
+
+#### Step 1 — Create a rules file
+
+```
+/ruby-upgrade-toolkit:rules init
+```
+
+This writes `.ruby-upgrade-toolkit/rules.yml` with one commented example per rule type, all `enabled: false` by default. Either edit the file to activate the examples you want, or author each rule interactively:
+
+```
+/ruby-upgrade-toolkit:rules add target-substitute
+# target=rails, replacement gem=railslts-version, constraint='~> 6.1.7',
+# source url=https://railslts.com, credentials_env=BUNDLE_RAILSLTS__COM
+
+/ruby-upgrade-toolkit:rules add verification-gate
+# command='bundle exec brakeman --no-pager --exit-on-warn',
+# phases=all, timing=after, required=true, id=brakeman-gate
+
+/ruby-upgrade-toolkit:rules add gem-swap
+# from=phantomjs,
+# to=[selenium-webdriver ~> 4.0, webdrivers ~> 5.0],
+# code_transforms=[Capybara.javascript_driver = :poltergeist
+#                  → Capybara.javascript_driver = :selenium_chrome_headless]
+```
+
+The resulting `.ruby-upgrade-toolkit/rules.yml`:
+
+```yaml
+version: 1
+rules:
+  - id: rails-lts-substitute
+    type: target-substitute
+    target: rails
+    replacement:
+      gem: railslts-version
+      constraint: '~> 6.1.7'
+      source:
+        url: https://railslts.com
+        credentials_env: BUNDLE_RAILSLTS__COM
+    description: "Use Rails LTS 6.1 (paid backports) instead of mainline Rails"
+
+  - id: brakeman-gate
+    type: verification-gate
+    command: "bundle exec brakeman --no-pager --exit-on-warn"
+    when: { phases: [all] }
+    timing: after
+    required: true
+    description: "Every phase must pass Brakeman before GREEN"
+
+  - id: phantomjs-to-selenium
+    type: gem-swap
+    from: phantomjs
+    to:
+      - { name: selenium-webdriver, constraint: '~> 4.0' }
+      - { name: webdrivers, constraint: '~> 5.0' }
+    code_transforms:
+      - pattern: "Capybara.javascript_driver = :poltergeist"
+        replacement: "Capybara.javascript_driver = :selenium_chrome_headless"
+    description: "Replace phantomjs with selenium + headless chromium"
+```
+
+#### Step 2 — Set credentials (never stored in rules.yml)
+
+```bash
+export BUNDLE_RAILSLTS__COM='your:credentials'
+# equivalent:
+# bundle config railslts.com your:credentials
+```
+
+Only the env var **name** lives in `rules.yml`; the secret stays in your shell / bundler config.
+
+#### Step 3 — Validate and dry-run
+
+```
+/ruby-upgrade-toolkit:rules validate
+/ruby-upgrade-toolkit:rules explain
+```
+
+`explain` shows exactly which rules will fire against the current project and which will no-op, with reasons:
+
+```
+Current state: Ruby 3.2.4, Rails 6.1.7
+
+Active rules (3):
+
+  [rails-lts-substitute]     target-substitute
+    Will redirect: Rails 6.1 → Rails LTS 6.1 (mainline Rails hops skipped)
+    Preflight: BUNDLE_RAILSLTS__COM is set ✓
+
+  [brakeman-gate]            verification-gate
+    Will fire: verify step of every apply phase
+    Binary check: OK (brakeman 6.1.2 found)
+
+  [phantomjs-to-selenium]    gem-swap
+    Will fire: Ruby Phase 2 (3.3 phase — first apply phase)
+    Matched: phantomjs found in Gemfile; 2 Capybara config sites match
+```
+
+#### Step 4 — Audit and plan
+
+```
+/ruby-upgrade-toolkit:audit ruby:3.3.1 rails:6.1
+/ruby-upgrade-toolkit:plan  ruby:3.3.1 rails:6.1
+```
+
+The audit gains a **Custom Rules Impact** section listing each rule, its affected phases, and its incremental effort contribution. The plan annotates phase checklists inline — built-in steps remain untagged, rule-driven steps get a `[rule: <id>]` tag:
+
+```
+Ruby Phase 2: 3.2 → 3.3
+  - Update .ruby-version and Gemfile ruby pin
+  - [rule: phantomjs-to-selenium] Swap phantomjs → selenium-webdriver + webdrivers
+  - [rule: phantomjs-to-selenium] Rewrite Capybara driver config (2 sites)
+  - RSpec green + RuboCop clean
+  - [rule: brakeman-gate] Brakeman: no warnings (required)
+  - Checkpoint: status GREEN required
+
+Rails Phase 1: 6.1 → Rails LTS 6.1  ← path redirected by rule: rails-lts-substitute
+  - [rule: rails-lts-substitute] Replace 'rails' gem with railslts-version from https://railslts.com
+  - Run bundle update rails
+  - RSpec green + RuboCop clean
+  - [rule: brakeman-gate] Brakeman: no warnings (required)
+  - Checkpoint: status GREEN = upgrade complete
+```
+
+The Estimate Summary adds a **Rules contrib** column so rule-driven effort is visible at a glance.
+
+#### Step 5 — Run the upgrade
+
+```
+/ruby-upgrade-toolkit:upgrade ruby:3.3.1 rails:6.1
+```
+
+Upgrade's preflight verifies all rule credentials before the phase loop starts; missing credentials fail fast with a clear message. Each phase's commit message includes a **Custom rules applied** block, so rule impact is auditable in git history:
+
+```
+chore(upgrade): ruby 3.3.1 phase
+
+Version pins:
+- .ruby-version: 3.2.4 → 3.3.1
+
+Custom rules applied:
+- [phantomjs-to-selenium] Swapped phantomjs → selenium-webdriver, webdrivers. Rewrote 2 Capybara config sites.
+- [brakeman-gate] Passed (0 warnings).
+
+Verification:
+- RSpec: 847 examples, 0 failures
+- RuboCop: 0 offenses
+- Custom gate brakeman-gate: PASS (required)
+- Tier: GREEN
+```
+
+If Brakeman flags new warnings in any phase, the fix step exits without committing and the upgrade's recovery menu adds a **`D) Disable rule <id> and retry`** option so you can unblock the pipeline without editing `rules.yml` mid-run:
+
+```
+⛔ UPGRADE PAUSED — Phase [Rails LTS 6.1] did not pass verification
+
+⛔ Required gate failed: brakeman-gate
+[brakeman output]
+
+━━━ What you can do ━━━
+  A) Investigate and fix
+  B) Retry this phase
+  C) Abort
+  D) Disable rule brakeman-gate and retry
+```
+
+Re-enable the gate later once the warnings are resolved:
+
+```
+/ruby-upgrade-toolkit:rules enable brakeman-gate
+/ruby-upgrade-toolkit:status   # gate re-runs on the next check
+```
+
+**Takeaway.** Custom rules are the extensibility point for project-specific policy. The toolkit's built-in behavior stays simple; teams enforce their own standards — LTS subscriptions, security gates, gem conventions — alongside it without forking the plugin.
+
+---
+
 ### Quick reference
 
 ```bash
@@ -869,6 +1119,13 @@ Suggested Next Step: Update CI/CD rails version, update Dockerfiles, merge.
 
 # Check upgrade health at any point without making changes
 /ruby-upgrade-toolkit:status
+
+# Manage project-specific custom rules (gem pins, swaps, gates, etc.)
+/ruby-upgrade-toolkit:rules init                   # scaffold with examples
+/ruby-upgrade-toolkit:rules add verification-gate  # author a Brakeman/Reek gate
+/ruby-upgrade-toolkit:rules list                   # see active rules
+/ruby-upgrade-toolkit:rules explain                # dry-run against current project
+/ruby-upgrade-toolkit:rules validate               # CI-friendly schema check
 ```
 
 ## Agents
